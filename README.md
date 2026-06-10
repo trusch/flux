@@ -15,6 +15,10 @@ No libraries. No build step. No network calls. 44KB.
 
 [`nebula.html`](nebula.html) — **[fly it live](https://trusch.github.io/flux/nebula.html)** — a 64×64×64 Navier-Stokes solver volume-raymarched into glowing nebulae, and **you are made of it**: the player is a cloud of ink held together by an invisible binding force written into the fluid's velocity field. Thrust and your body trails behind you like a comet; planets bend your path AND tear ink off your body as you pass; fall onto one and you're reborn. Toroidal wrapped space, third-person chase camera with banking, on-screen D-pad + thrust/brake (arrows + W/S on desktop), speed-following engine audio. And it's an ecosystem: crimson, emerald and azure nebulae roam the void — wild clouds and three NPC rivals — locked in a fair circle computed per voxel (crimson eats emerald, emerald eats azure, azure eats crimson). Switch your own color any time on an 8s cooldown; linger inside a predator's cloud and you're absorbed and reborn.
 
+## TRIAD — the arena (the same flux, now a game)
+
+[`triad.html`](triad.html) — **[play it live](https://trusch.github.io/flux/triad.html)** — the untouched FLUX simulation turned into an arena. You are a nebula: hold a finger and your heart follows, dragging your ink through the water. Collect golden motes to grow. Two NPC rivals share the arena, and the food chain is a fair circle (crimson > emerald > azure > crimson) computed per pixel wherever clouds touch — battles are storms of counter-rotating vortices at the front line, with partial mass transfer weighted by species and size: the wounded can always flee. Switch color on an 8s cooldown; double-tap for a defensive burst.
+
 ## What it does
 
 Your fingers paint liquid light. The screen runs an actual Navier-Stokes fluid simulation on your GPU — not a particle fake — and every stroke plays notes in key through a synthesizer built from raw oscillators.
