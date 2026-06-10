@@ -342,6 +342,125 @@ const reactFS = `
     gl_FragColor = vec4(r, g, b, r + g + b);
   }`;
 
+/* sharp particle layer: 65k sprites advected by the SAME velocity field —
+   they inherit binding, gravity and stirring for free, and take their color
+   from the dominant species of the dye where they float */
+const partSimFS = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uState, uVel, uDyeT;
+  uniform vec4 uHearts[4];   // domain coords
+  uniform float uDt, uTime;
+  ${ATLAS}
+  vec2 hash22 (vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.xx + p3.yz) * p3.zy);
+  }
+  void main () {
+    vec4 st = texture2D(uState, vUv);
+    vec3 pos = st.xyz;
+    vec3 v = sampleTri(uVel, pos).xyz;
+    pos = fract(pos + v * uDt + 1.0);
+    /* starving particles re-seed near a random heart, so the budget stays
+       where the clouds are */
+    float dens = dot(sampleTri(uDyeT, pos).rgb, vec3(1.0));
+    vec2 h2 = hash22(vUv * 913.7 + fract(uTime) * 31.7);
+    if (dens < 0.02 && h2.x < 0.08) {
+      float pick = floor(h2.y * 4.0);
+      vec3 hp = vec3(0.5);
+      for (int i = 0; i < 4; i++) if (float(i) == pick) hp = uHearts[i].xyz;
+      vec2 h3 = hash22(vUv * 477.1 + h2);
+      vec3 off = vec3(h2.y, h3.x, h3.y) - 0.5;
+      pos = fract(hp + off * 0.16 + 1.0);
+    }
+    gl_FragColor = vec4(pos, st.w);
+  }`;
+const partSeedFS = `
+  precision highp float;
+  varying vec2 vUv;
+  vec2 hash22 (vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.xx + p3.yz) * p3.zy);
+  }
+  void main () {
+    vec2 a = hash22(vUv * 311.7);
+    vec2 b = hash22(vUv * 197.3 + 7.7);
+    gl_FragColor = vec4(a.x, a.y, b.x, b.y);
+  }`;
+const partDrawVS = `#version 300 es
+  precision highp float;
+  uniform sampler2D uState, uDyeT;
+  uniform vec3 uCamD;        // camera position, fract per component (domain)
+  uniform vec3 uCamW;        // camera true world position
+  uniform mat3 uCamB;        // columns: right, up, forward
+  uniform vec2 uRes;
+  uniform vec3 uSpecCol[3];
+  uniform vec4 uSph[12];
+  uniform float uTime, uPix;
+  out vec3 vCol;
+  const float N = 64.0;
+  const float TILES = 8.0;
+  vec4 sampleTri (sampler2D tex, vec3 p) {
+    vec3 v = fract(p) * N;
+    vec2 xy = clamp(v.xy - 0.5, vec2(0.001), vec2(N - 1.001));
+    float zf = v.z - 0.5;
+    float z0 = floor(zf);
+    float fz = zf - z0;
+    float za = mod(z0 + N, N);
+    float zb = mod(za + 1.0, N);
+    vec2 ta = vec2(mod(za, TILES), floor(za / TILES));
+    vec2 tb = vec2(mod(zb, TILES), floor(zb / TILES));
+    return mix(texture(tex, (ta * N + xy + 0.5) / (N * TILES)),
+               texture(tex, (tb * N + xy + 0.5) / (N * TILES)), fz);
+  }
+  void main () {
+    ivec2 ij = ivec2(gl_VertexID % 256, gl_VertexID / 256);
+    vec4 st = texelFetch(uState, ij, 0);
+    vec3 dp = fract(st.xyz - uCamD + 0.5) - 0.5;   // nearest toroidal repeat
+    vec3 v = dp * uCamB;                            // view coords (r, u, f)
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    gl_PointSize = 0.0;
+    vCol = vec3(0.0);
+    float depth = v.z;
+    if (depth < 0.025 || depth > 1.7) return;
+    vec2 uv = v.xy * (1.5 / depth);
+    vec2 ndc = vec2(uv.x / (uRes.x / uRes.y), uv.y);
+    if (abs(ndc.x) > 1.05 || abs(ndc.y) > 1.05) return;
+    /* occlusion by planets */
+    vec3 rdv = dp / max(length(dp), 1e-5);
+    float tmax = length(dp);
+    for (int i = 0; i < 12; i++) {
+      vec3 oc = uCamW - uSph[i].xyz;
+      float b = dot(oc, rdv);
+      float cc = dot(oc, oc) - uSph[i].w * uSph[i].w;
+      float h = b * b - cc;
+      if (h > 0.0) {
+        float t = -b - sqrt(h);
+        if (t > 0.0 && t < tmax) return;
+      }
+    }
+    vec4 s = sampleTri(uDyeT, st.xyz);
+    float m = max(s.r, max(s.g, s.b));
+    if (m < 0.012) return;
+    vec3 base = (s.r >= s.g && s.r >= s.b) ? uSpecCol[0] : ((s.g >= s.b) ? uSpecCol[1] : uSpecCol[2]);
+    float tw = 0.55 + 0.45 * sin(uTime * (2.0 + st.w * 7.0) + st.w * 43.0);
+    float fog = exp(-depth * 1.15);
+    vCol = (base * (0.5 + 0.6 * tw) + vec3(0.3, 0.32, 0.36) * tw * tw * 0.45) * fog * (0.35 + min(m, 1.2));
+    gl_Position = vec4(ndc, 0.0, 1.0);
+    gl_PointSize = clamp(uPix * 0.016 / depth, 1.0, 6.5);
+  }`;
+const partDrawFS = `#version 300 es
+  precision highp float;
+  in vec3 vCol;
+  out vec4 frag;
+  void main () {
+    vec2 d = gl_PointCoord - 0.5;
+    float a = smoothstep(0.25, 0.10, dot(d, d));
+    frag = vec4(vCol, 1.0) * a;
+  }`;
+
 const clearFS = `
   precision mediump float;
   varying vec2 vUv;
@@ -415,16 +534,20 @@ const renderFS = `
     float t = ds * (0.3 + 0.7 * jitter);
     vec3 col = vec3(0.0);
     float trans = 1.0;
+    /* species tints breathe so the clouds never sit still */
+    vec3 cs0 = uSpecCol[0] * (0.82 + 0.30 * sin(uTime * 0.43));
+    vec3 cs1 = uSpecCol[1] * (0.82 + 0.30 * sin(uTime * 0.51 + 2.1));
+    vec3 cs2 = uSpecCol[2] * (0.82 + 0.30 * sin(uTime * 0.37 + 4.2));
     for (int i = 0; i < STEPS; i++) {
       if (t > tEnd || trans < 0.02) break;
       vec3 wp = ro + rd * t;
       vec4 s = sampleTri(uDye, wp);
       float dens = s.r + s.g + s.b;
       if (dens > 0.003) {
-        vec3 ec = s.r * uSpecCol[0] + s.g * uSpecCol[1] + s.b * uSpecCol[2];
+        vec3 ec = s.r * cs0 + s.g * cs1 + s.b * cs2;
         float fade = exp(-t * 0.9);
-        col += ec * (5.5 * ds) * trans * fade;
-        trans *= exp(-dens * 5.0 * ds * fade);
+        col += ec * (2.6 * ds) * trans * fade;
+        trans *= exp(-dens * 6.0 * ds * fade);
       }
       t += ds;
     }
@@ -527,6 +650,37 @@ function createDouble (filter) {
   return { get read () { return a; }, get write () { return b; },
            swap () { const t = a; a = b; b = t; } };
 }
+/* particle state: 256^2 sprites, positions in wrapping domain coords */
+const PART_N = 256;
+function createPartTex () {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  let internal = isWebGL2 ? gl.RGBA32F : formatRGBA.internalFormat;
+  let type = isWebGL2 ? gl.FLOAT : halfType;
+  gl.texImage2D(gl.TEXTURE_2D, 0, internal, PART_N, PART_N, 0, gl.RGBA, type, null);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+    /* 32F not renderable: fall back to half float */
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, formatRGBA.internalFormat, PART_N, PART_N, 0, gl.RGBA, halfType, null);
+  }
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  return { tex, fbo, width: PART_N, height: PART_N,
+           attach (id) { gl.activeTexture(gl.TEXTURE0 + id); gl.bindTexture(gl.TEXTURE_2D, tex); return id; } };
+}
+const pState = isWebGL2 ? (() => {
+  let pa = createPartTex(), pb = createPartTex();
+  return { get read () { return pa; }, get write () { return pb; },
+           swap () { const t = pa; pa = pb; pb = t; } };
+})() : null;
+const emptyVAO = isWebGL2 ? gl.createVertexArray() : null;
+
 const vel = createDouble(gl.LINEAR);
 const dye = createDouble(gl.LINEAR);
 const pressure = createDouble(gl.NEAREST);
@@ -539,6 +693,22 @@ const gradProg   = new Program(gradientFS);
 const splatProg  = new Program(splatFS);
 const clearProg  = new Program(clearFS);
 const forceProg  = new Program(forceFS);
+const partSimProg  = isWebGL2 ? new Program(partSimFS) : null;
+const partSeedProg = isWebGL2 ? new Program(partSeedFS) : null;
+const partDrawProg = isWebGL2 ? (() => {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, partDrawVS));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, partDrawFS));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) console.error(gl.getProgramInfoLog(p));
+  const u = {};
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) {
+    const name = gl.getActiveUniform(p, i).name;
+    u[name] = gl.getUniformLocation(p, name);
+  }
+  return { program: p, u, bind () { gl.useProgram(p); } };
+})() : null;
 const reactProg  = new Program(reactFS);
 const renderProg = new Program(renderFS);
 
@@ -660,6 +830,7 @@ function seed () {
   }
 }
 seed();
+if (pState) { partSeedProg.bind(); blit(pState.write); pState.swap(); }
 
 /* ---------------- the player: an invisible center the cloud clings to ---------------- */
 const SPAWN = [0.18, 0.05, 0.9];
@@ -833,11 +1004,13 @@ function camMatrix (dt, b) {
     r[1] * fv[2] - r[2] * fv[1],
     r[2] * fv[0] - r[0] * fv[2],
     r[0] * fv[1] - r[1] * fv[0]];
+  viewBasis.set([r[0], r[1], r[2], u[0], u[1], u[2], fv[0], fv[1], fv[2]]);
   return new Float32Array([r[0], r[1], r[2], u[0], u[1], u[2], -fv[0], -fv[1], -fv[2]]);
 }
+const viewBasis = new Float32Array(9);
 
 /* ---------------- render ---------------- */
-let resScale = 0.55;
+let resScale = 0.68;
 function resizeCanvas () {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = Math.max(2, Math.floor(canvas.clientWidth * dpr * resScale));
@@ -865,6 +1038,53 @@ function render (now, b, mat) {
   gl.uniform3fv(renderProg.u['uSpecCol[0]'], new Float32Array(SPEC_COL.flat()));
   blit(null);
 }
+function particleSim (dt, now) {
+  if (!pState) return;
+  partSimProg.bind();
+  gl.uniform1i(partSimProg.u.uState, pState.read.attach(0));
+  gl.uniform1i(partSimProg.u.uVel, vel.read.attach(1));
+  gl.uniform1i(partSimProg.u.uDyeT, dye.read.attach(2));
+  const hb = new Float32Array(16);
+  const hearts = [ship, NPCS[0], NPCS[1], NPCS[2]];
+  for (let i = 0; i < 4; i++) {
+    hb[i * 4]     = hearts[i].pos[0] - Math.floor(hearts[i].pos[0]);
+    hb[i * 4 + 1] = hearts[i].pos[1] - Math.floor(hearts[i].pos[1]);
+    hb[i * 4 + 2] = hearts[i].pos[2] - Math.floor(hearts[i].pos[2]);
+    hb[i * 4 + 3] = 1.0;
+  }
+  gl.uniform4fv(partSimProg.u['uHearts[0]'], hb);
+  gl.uniform1f(partSimProg.u.uDt, dt);
+  gl.uniform1f(partSimProg.u.uTime, now / 1000);
+  blit(pState.write);
+  pState.swap();
+}
+function particleDraw (now, b) {
+  if (!pState) return;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  partDrawProg.bind();
+  gl.bindVertexArray(emptyVAO);
+  gl.uniform1i(partDrawProg.u.uState, pState.read.attach(0));
+  gl.uniform1i(partDrawProg.u.uDyeT, dye.read.attach(1));
+  gl.uniform3f(partDrawProg.u.uCamD,
+    camPos[0] - Math.floor(camPos[0]),
+    camPos[1] - Math.floor(camPos[1]),
+    camPos[2] - Math.floor(camPos[2]));
+  gl.uniform3f(partDrawProg.u.uCamW, camPos[0], camPos[1], camPos[2]);
+  /* columns: right, up, forward of the view */
+  gl.uniformMatrix3fv(partDrawProg.u.uCamB, false, viewBasis);
+  gl.uniform2f(partDrawProg.u.uRes, canvas.width, canvas.height);
+  gl.uniform3fv(partDrawProg.u['uSpecCol[0]'], new Float32Array(SPEC_COL.flat()));
+  gl.uniform4fv(partDrawProg.u['uSph[0]'], sphFlat);
+  gl.uniform1f(partDrawProg.u.uTime, now / 1000);
+  gl.uniform1f(partDrawProg.u.uPix, gl.drawingBufferHeight);
+  gl.drawArrays(gl.POINTS, 0, PART_N * PART_N);
+  gl.bindVertexArray(null);
+  gl.disable(gl.BLEND);
+}
+
 /* eaten check: read the dye at the player's heart voxel */
 let lastEatCheck = 0, lastMass = 0, readbackOK = true;
 function eatCheck () {
@@ -1216,7 +1436,7 @@ function tick (now) {
   frameEMA += (dt * 1000 - frameEMA) * 0.05;
   if (now - lastResAdjust > 1500) {
     if (frameEMA > 30 && resScale > 0.34) { resScale *= 0.85; lastResAdjust = now; }
-    else if (frameEMA < 14 && resScale < 0.8) { resScale *= 1.07; lastResAdjust = now; }
+    else if (frameEMA < 14 && resScale < 0.92) { resScale *= 1.07; lastResAdjust = now; }
   }
   resizeCanvas();
   const { b, near } = updateShip(dt, now);
@@ -1227,6 +1447,8 @@ function tick (now) {
   Audio.drone(launched && now - lastInteraction < 10000);
   const mat = camMatrix(dt, b);
   render(now, b, mat);
+  particleSim(dt, now);
+  particleDraw(now, b);
   if (now - speedTimer > 120) {
     speedTimer = now;
     const cd = Math.max(0, SWITCH_CD - (now - lastSwitch));
