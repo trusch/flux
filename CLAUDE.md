@@ -7,7 +7,7 @@ Single self-contained `index.html` — mobile-first showcase app (GPU Navier-Sto
 - ONE file, zero dependencies, no build step. Everything inline.
 - Public repo `trusch/flux`, deployed via GitHub Pages from `main` root. Pushing to `main` is allowed for this repo.
 - Framebuffers must survive resizes via copy-blit (`resizeDoubleFBO`) — mobile URL-bar show/hide fires resizes constantly; recreating FBOs wipes the user's painting.
-- Audio: keep the unlock dance (suspended AudioContext + gesture-end resume kicks), the iPad audio-session promotion (audioSession.type='playback' + looping silent <audio> keepalive — without it the mute switch silences WebAudio), AND the activity-gated drone (`droneEnv` multiplies base + LFO; fades out ~8s after last pointer interaction, autopilot does not count).
+- Audio: keep the unlock dance (suspended AudioContext + gesture-end resume kicks), the iPad audio-session promotion (audioSession.type='playback' + a looping silent <audio> keepalive that MUST stay gated to Apple touch devices and >=1s long — un-gated it crackles on Android, see 500ce55; without it the iPad mute switch silences WebAudio). The pluck synth is intentionally UNBOUNDED here (no polyphony cap — bounding caused note drops, see 9eb8f08/500ce55), AND the activity-gated drone (`droneEnv` multiplies base + LFO; fades out ~8s after last pointer interaction, autopilot does not count).
 
 ## Verification
 
