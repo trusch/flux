@@ -712,7 +712,7 @@ function applyInputs () {
       p.moved = false;
       splat(p.texcoordX, p.texcoordY, p.deltaX * config.SPLAT_FORCE, p.deltaY * config.SPLAT_FORCE, p.color);
       const speed = Math.hypot(p.deltaX, p.deltaY);
-      if (now - p.lastNoteTime > 95 && speed > 0.002) {
+      if (now - p.lastNoteTime > 130 && speed > 0.002) {
         p.lastNoteTime = now;
         Audio.pluck(p.texcoordX, p.texcoordY, Math.min(1, speed * 60));
       }
@@ -812,6 +812,7 @@ const Audio = (() => {
   let ctx = null, bus = null, wet = null, muted = false, droneGain = null;
   let droneEnv = null, droneOn = false;
   let pendingPluck = null, pendingBoom = false, unlockHooked = false;
+  let voiceCount = 0, lastPluckT = 0;   // polyphony budget — multi-finger painting must not crackle
   const SCALE = [0, 2, 4, 7, 9]; // major pentatonic
   /* Mobile browsers create AudioContexts 'suspended' and don't always honor
      resume() from pointerdown (iOS only unlocks on touchend). Kick the lock
@@ -899,25 +900,31 @@ const Audio = (() => {
     if (!ctx || muted) return;
     if (ctx.state !== 'running') { pendingPluck = { x, y, v: vel }; unlock(); return; }
     const t = ctx.currentTime;
+    if (t - lastPluckT < 0.05 || voiceCount >= 8) return;
+    lastPluckT = t;
     const octave = Math.floor(y * 2.4);              // higher on screen = higher pitch
     const deg = SCALE[Math.floor(x * 5 + Math.random()) % 5];
     const midi = 57 + deg + 12 * octave;
     const freq = 440 * Math.pow(2, (midi - 69) / 12);
+    const rich = voiceCount < 4;            // octave partner only when calm
     const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = freq;
-    const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = freq * 2.001;
+    const o2 = rich ? ctx.createOscillator() : null;
+    if (o2) { o2.type = 'sine'; o2.frequency.value = freq * 2.001; }
     const f = ctx.createBiquadFilter(); f.type = 'lowpass';
     f.frequency.value = 700 + 2600 * y; f.Q.value = 1.2;
     const g = ctx.createGain();
-    const peak = 0.05 + 0.16 * vel;
+    const peak = (0.05 + 0.16 * vel) / (1 + voiceCount * 0.18);
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(peak, t + 0.008);
     g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9 + Math.random() * 0.6);
     const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
-    o.connect(f); o2.connect(f); f.connect(g);
+    o.connect(f); if (o2) o2.connect(f); f.connect(g);
     if (pan) { pan.pan.value = x * 1.6 - 0.8; g.connect(pan); pan.connect(bus); }
     else g.connect(bus);
-    o.start(t); o2.start(t);
-    o.stop(t + 1.8); o2.stop(t + 1.8);
+    voiceCount++;
+    o.onended = () => { voiceCount = Math.max(0, voiceCount - 1); };
+    o.start(t); if (o2) o2.start(t);
+    o.stop(t + 1.6); if (o2) o2.stop(t + 1.6);
   }
   function boom () {
     if (!ctx || muted) return;
