@@ -810,7 +810,37 @@ function autopilot (now) {
 /* ---------------- audio engine ---------------- */
 const Audio = (() => {
   let ctx = null, bus = null, wet = null, muted = false, droneGain = null;
+  let pendingPluck = null, pendingBoom = false, unlockHooked = false;
   const SCALE = [0, 2, 4, 7, 9]; // major pentatonic
+  /* Mobile browsers create AudioContexts 'suspended' and don't always honor
+     resume() from pointerdown (iOS only unlocks on touchend). Kick the lock
+     on every gesture-ending event until the context runs, and replay the
+     first queued note the moment it does — otherwise the whole first stroke
+     is silent. */
+  function unlock () {
+    if (!ctx || ctx.state === 'running') return;
+    ctx.resume().then(flushPending).catch(() => {});
+    try {
+      const s = ctx.createBufferSource();
+      s.buffer = ctx.createBuffer(1, 1, 22050);
+      s.connect(ctx.destination);
+      s.start(0);
+    } catch (e) {}
+  }
+  function hookUnlock () {
+    if (unlockHooked) return;
+    unlockHooked = true;
+    const kick = () => unlock();
+    ['pointerdown', 'pointerup', 'touchend', 'click'].forEach(ev =>
+      window.addEventListener(ev, kick, true));
+    ctx.onstatechange = () => { if (ctx.state === 'running') flushPending(); };
+  }
+  function flushPending () {
+    if (!ctx || ctx.state !== 'running') return;
+    const p = pendingPluck; pendingPluck = null;
+    if (p) pluck(p.x, p.y, p.v);
+    if (pendingBoom) { pendingBoom = false; boom(); }
+  }
   function init () {
     if (ctx) return;
     try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
@@ -843,10 +873,13 @@ const Audio = (() => {
     const lfo = ctx.createOscillator(); lfo.frequency.value = 0.07;
     const lfoG = ctx.createGain(); lfoG.gain.value = 0.05;
     lfo.connect(lfoG); lfoG.connect(droneGain.gain); lfo.start();
+    hookUnlock();
+    unlock();
   }
-  function resume () { if (ctx && ctx.state === 'suspended') ctx.resume(); }
+  function resume () { unlock(); }
   function pluck (x, y, vel) {
     if (!ctx || muted) return;
+    if (ctx.state !== 'running') { pendingPluck = { x, y, v: vel }; unlock(); return; }
     const t = ctx.currentTime;
     const octave = Math.floor(y * 2.4);              // higher on screen = higher pitch
     const deg = SCALE[Math.floor(x * 5 + Math.random()) % 5];
@@ -870,6 +903,7 @@ const Audio = (() => {
   }
   function boom () {
     if (!ctx || muted) return;
+    if (ctx.state !== 'running') { pendingBoom = true; unlock(); return; }
     const t = ctx.currentTime;
     const o = ctx.createOscillator(); o.type = 'sine';
     o.frequency.setValueAtTime(130, t);
