@@ -38,11 +38,11 @@
     width:26px; height:26px; border-radius:50%; border:2px solid transparent; cursor:pointer; padding:0;
     transition:transform .25s ease, border-color .25s ease; outline:none;
   }
-  .pal[data-p="emerald"] { background:radial-gradient(circle at 35% 35%, #bfffd0, #19c46a 55%, #03240f); }
-  .pal[data-p="violet"]  { background:radial-gradient(circle at 35% 35%, #e6c8ff, #8d3bff 55%, #170433); }
-  .pal[data-p="ember"]   { background:radial-gradient(circle at 35% 35%, #ffd9a0, #ff5e1f 55%, #2a0b02); }
-  .pal[data-p="ice"]     { background:radial-gradient(circle at 35% 35%, #d8f7ff, #2da9ff 55%, #04182e); }
+  .pal[data-s="0"] { background:radial-gradient(circle at 35% 35%, #ffc8c0, #ff4a38 55%, #2a0502); }
+  .pal[data-s="1"] { background:radial-gradient(circle at 35% 35%, #bfffd0, #19c46a 55%, #03240f); }
+  .pal[data-s="2"] { background:radial-gradient(circle at 35% 35%, #c8e2ff, #3d8aff 55%, #041a33); }
   .pal.on { border-color:rgba(255,255,255,.95); transform:scale(1.18); }
+  .pal.cd { opacity:.3; }
   .ib {
     width:32px; height:32px; border-radius:50%; border:none; background:rgba(255,255,255,.07); cursor:pointer;
     display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,.85); transition:transform .15s;
@@ -111,13 +111,12 @@
 <body>
 <canvas id="c"></canvas>
 <div id="veil"></div>
-<div id="hint">touch to awaken<b>you are the nebula · it follows your heart</b></div>
+<div id="hint">touch to awaken<b>you are a nebula · eat the circle · fear the circle</b></div>
 <div id="brand">NEBULA<span>flux in three dimensions</span></div>
 <div id="ui">
-  <button class="pal on" data-p="emerald" aria-label="emerald palette"></button>
-  <button class="pal" data-p="violet" aria-label="violet palette"></button>
-  <button class="pal" data-p="ember" aria-label="ember palette"></button>
-  <button class="pal" data-p="ice" aria-label="ice palette"></button>
+  <button class="pal" data-s="0" aria-label="become crimson"></button>
+  <button class="pal on" data-s="1" aria-label="become emerald"></button>
+  <button class="pal" data-s="2" aria-label="become azure"></button>
   <button class="ib" id="snd" aria-label="toggle sound"><svg viewBox="0 0 24 24"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path id="sndwave" d="M15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13"/></svg></button>
   <button class="ib" id="cam" aria-label="save image"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg></button>
   <button class="ib" id="info" aria-label="about"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v6"/><path d="M12 7.2v.2"/></svg></button>
@@ -136,7 +135,8 @@
     <h2>NEBULA</h2>
     <div class="sub">flux in three dimensions</div>
     <p>A real fluid simulation — but this time the water is <i>space itself</i>, and <b>you are made of it</b>. A 64×64×64 Navier-Stokes solver runs on your GPU, volume-raymarched into glowing nebulae. The player is a cloud of ink held together by an invisible force pulling it toward your heart — accelerate and your body trails behind you like a comet; coast and it gathers itself back. The planets aren't decoration: their gravity bends your path AND tears ink from your body as you pass. Fall onto one and you are consumed — and reborn.</p>
-    <p><b>D-pad</b> steers your heart, <b>thrust</b> accelerates, <b>brake</b> below it. Drag the screen to look. <b>Double-tap</b> detonates your own body outward — the binding force gathers it back. Skim a planet to feel gravity steal your ink; fight free or fall.</p>
+    <p><b>D-pad</b> steers your heart, <b>thrust</b> accelerates, <b>brake</b> below it. Drag to look, <b>double-tap</b> to detonate your body outward — the binding force gathers it back. Skim a planet and gravity steals your ink; fight free or fall and be reborn.</p>
+<p>And you are not alone. The void holds <b>crimson, emerald and azure</b> nebulae — wild ones, and three rivals with hearts like yours. The food chain is a fair circle: <b style="color:#ff6a5a">crimson</b> eats <b style="color:#52e08a">emerald</b>, emerald eats <b style="color:#6aa8ff">azure</b>, azure eats crimson — computed per voxel, wherever two clouds touch. Switch your own color any time (8s cooldown, top right). Linger inside a predator's cloud and you will be absorbed — and reborn.</p>
     <h3>The origin</h3>
     <p>Part of a single-prompt AI showcase series that began with <a href="https://trusch.github.io/flux/" target="_blank" rel="noopener">FLUX</a>. This one came from:</p>
     <blockquote>"I want also a fluid simulation but it should be in 3d and the player is able to move the fluid in space… and we need some spheres in the space like planets or stars so we have something we are relative to, so we see the movement."</blockquote>
@@ -177,7 +177,6 @@ if (isWebGL2) {
 gl.clearColor(0, 0, 0, 0);
 
 let launched = false;
-let paletteMode = 'emerald';
 let lastInteraction = 0;
 
 /* ---------------- shaders ---------------- */
@@ -302,17 +301,19 @@ const forceFS = `
   precision highp float;
   varying vec2 vUv;
   uniform sampler2D uVel;
-  uniform vec3 uPlayer;       // domain coords
+  uniform vec4 uBindC[4];     // xyz domain coords of each heart, w on/off
   uniform float uBind, uBindR, uDt;
   uniform vec4 uGrav[4];      // xyz domain coords, w strength
   ${ATLAS}
   void main () {
     vec3 p = domainPosOf(vUv);
     vec3 v = texture2D(uVel, vUv).xyz;
-    vec3 d = p - uPlayer;
-    d -= floor(d + 0.5);
-    float w = exp(-dot(d, d) / (uBindR * uBindR));
-    v += (-d * uBind - v * 2.2) * w * uDt;
+    for (int i = 0; i < 4; i++) {
+      vec3 d = p - uBindC[i].xyz;
+      d -= floor(d + 0.5);
+      float w = exp(-dot(d, d) / (uBindR * uBindR)) * uBindC[i].w;
+      v += (-d * uBind - v * 2.2) * w * uDt;
+    }
     for (int i = 0; i < 4; i++) {
       vec3 g = p - uGrav[i].xyz;
       g -= floor(g + 0.5);
@@ -321,6 +322,24 @@ const forceFS = `
       v -= (g / sqrt(r2)) * a * uDt;
     }
     gl_FragColor = vec4(v, 1.0);
+  }`;
+
+/* the food chain, per voxel: R eats G, G eats B, B eats R — a fair circle */
+const reactFS = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uDye;
+  uniform float uDt;
+  void main () {
+    vec4 s = texture2D(uDye, vUv);
+    float k = uDt * 4.0;
+    float rg = s.r * s.g * k;   /* R eats G */
+    float gb = s.g * s.b * k;   /* G eats B */
+    float br = s.b * s.r * k;   /* B eats R */
+    float r = max(s.r + rg - br, 0.0);
+    float g = max(s.g + gb - rg, 0.0);
+    float b = max(s.b + br - gb, 0.0);
+    gl_FragColor = vec4(r, g, b, r + g + b);
   }`;
 
 const clearFS = `
@@ -340,9 +359,9 @@ const renderFS = `
   uniform float uTime;
   uniform vec4 uSph[12];      // xyz center, w radius (world)
   uniform vec3 uSphCol[12];
-  uniform vec3 uShip;         // the player cloud's invisible center
-  uniform float uThrust;      // 0..1 drive output
-  uniform vec3 uShipCol;      // palette accent
+  uniform vec4 uHearts[4];    // xyz world pos, w species (0/1/2); [0] = player
+  uniform float uThrust;      // 0..1 player drive output
+  uniform vec3 uSpecCol[3];   // species display colors
   ${ATLAS}
   float hash13 (vec3 p3) {
     p3 = fract(p3 * 0.1031);
@@ -400,22 +419,26 @@ const renderFS = `
       if (t > tEnd || trans < 0.02) break;
       vec3 wp = ro + rd * t;
       vec4 s = sampleTri(uDye, wp);
-      float dens = s.a;
+      float dens = s.r + s.g + s.b;
       if (dens > 0.003) {
+        vec3 ec = s.r * uSpecCol[0] + s.g * uSpecCol[1] + s.b * uSpecCol[2];
         float fade = exp(-t * 0.9);
-        col += s.rgb * (5.5 * ds) * trans * fade;
+        col += ec * (5.5 * ds) * trans * fade;
         trans *= exp(-dens * 5.0 * ds * fade);
       }
       t += ds;
     }
 
-    /* the cloud's heart: a soft mote so you can always find yourself */
-    {
-      vec3 sp = uShip - ro;
+    /* hearts: the player's and every NPC's — softly glowing motes */
+    for (int i = 0; i < 4; i++) {
+      vec3 sp = uHearts[i].xyz - ro;
       float tp = clamp(dot(sp, rd), 0.0, FAR);
       float dd = length(sp - rd * tp);
       float occ = (hitId >= 0 && tp > tHit + 0.002) ? 0.2 : 1.0;
-      col += uShipCol * (exp(-dd * 200.0) * (0.8 + 1.8 * uThrust) + exp(-dd * 36.0) * 0.07) * occ;
+      vec3 hc = vec3(0.0);
+      for (int s = 0; s < 3; s++) if (s == int(uHearts[i].w + 0.5)) hc = uSpecCol[s];
+      float boost = i == 0 ? (0.8 + 1.8 * uThrust) : 0.55;
+      col += hc * (exp(-dd * 200.0) * boost + exp(-dd * 36.0) * 0.06) * occ * exp(-tp * 0.5);
     }
 
     /* what the ray ends on */
@@ -516,6 +539,7 @@ const gradProg   = new Program(gradientFS);
 const splatProg  = new Program(splatFS);
 const clearProg  = new Program(clearFS);
 const forceProg  = new Program(forceFS);
+const reactProg  = new Program(reactFS);
 const renderProg = new Program(renderFS);
 
 /* ---------------- world: planets ---------------- */
@@ -551,17 +575,17 @@ SPHCOL[0] = 0.85; SPHCOL[1] = 0.62; SPHCOL[2] = 0.38;
 const sphFlat = new Float32Array(SPHERES);
 const sphColFlat = new Float32Array(SPHCOL);
 
-/* ---------------- palettes ---------------- */
-const PAL = {
-  emerald: [0.25, 1.00, 0.50],
-  violet:  [0.62, 0.32, 1.00],
-  ember:   [1.00, 0.45, 0.16],
-  ice:     [0.40, 0.80, 1.00],
-};
-function wakeColor () {
-  const p = PAL[paletteMode];
-  const j = 0.75 + Math.random() * 0.5;
-  return [p[0] * j, p[1] * j, p[2] * j];
+/* ---------------- species: a fair circle — R eats G, G eats B, B eats R ---------------- */
+const SPEC_COL = [[1.00, 0.30, 0.24], [0.30, 1.00, 0.45], [0.36, 0.62, 1.00]];
+const SPEC_NAME = ['crimson', 'emerald', 'azure'];
+const predatorOf = s => (s + 2) % 3;   // who eats species s
+let species = 1;                        // the player starts emerald
+let lastSwitch = -1e9;
+const SWITCH_CD = 8000;
+function specSplatValue (s, amt) {
+  const v = [0, 0, 0, amt];
+  v[s] = amt;
+  return v;
 }
 
 /* ---------------- sim ---------------- */
@@ -592,6 +616,13 @@ function step (dt) {
   blit(dye.write);
   dye.swap();
 
+  /* the food chain */
+  reactProg.bind();
+  gl.uniform1i(reactProg.u.uDye, dye.read.attach(0));
+  gl.uniform1f(reactProg.u.uDt, dt);
+  blit(dye.write);
+  dye.swap();
+
   divProg.bind();
   gl.uniform1i(divProg.u.uVel, vel.read.attach(0));
   blit(divergence);
@@ -619,10 +650,9 @@ function step (dt) {
 /* seed the void so launch isn't empty */
 function seed () {
   for (let i = 0; i < 14; i++) {
-    const c = wakeColor();
-    const amt = 0.35 + rng() * 0.5;
+    const amt = 0.4 + rng() * 0.5;
     splat([rng(), rng(), rng()],
-      [c[0] * amt, c[1] * amt, c[2] * amt, amt * 0.8],
+      specSplatValue((rng() * 3) | 0, amt),
       0.04 + rng() * 0.07, dye);
     splat([rng(), rng(), rng()],
       [(rng() - 0.5) * 0.3, (rng() - 0.5) * 0.3, (rng() - 0.5) * 0.3, 0],
@@ -653,6 +683,35 @@ function shipBasis () {
   const u2 = [up[0] * cr - right[0] * sr, up[1] * cr - right[1] * sr, up[2] * cr - right[2] * sr];
   return { fwd, right: r2, up: u2 };
 }
+/* NPC nebulae: same rules as the player — wander, bind ink, eat and be eaten */
+const NPCS = [
+  { pos: [0.6, 0.3, 0.4], vel: [0, 0, 0], yaw: 1.2, pitch: 0.1, spec: 0, tTurn: 0 },
+  { pos: [0.9, 0.7, 0.2], vel: [0, 0, 0], yaw: 3.5, pitch: -0.2, spec: 2, tTurn: 0 },
+  { pos: [0.3, 0.8, 0.7], vel: [0, 0, 0], yaw: 5.1, pitch: 0.2, spec: 0, tTurn: 0 },
+];
+function updateNPCs (dt, now) {
+  for (const n of NPCS) {
+    if (now > n.tTurn) {
+      n.tTurn = now + 2500 + Math.random() * 4000;
+      n.yaw += (Math.random() - 0.5) * 1.6;
+      n.pitch = Math.max(-0.9, Math.min(0.9, n.pitch + (Math.random() - 0.5) * 0.8));
+    }
+    /* stay loosely near the player so encounters happen */
+    const dx = ship.pos[0] - n.pos[0], dy = ship.pos[1] - n.pos[1], dz = ship.pos[2] - n.pos[2];
+    const d = Math.hypot(dx, dy, dz);
+    let fx = Math.sin(n.yaw) * Math.cos(n.pitch), fy = Math.sin(n.pitch), fz = -Math.cos(n.yaw) * Math.cos(n.pitch);
+    if (d > 1.4) { fx = dx / d; fy = dy / d; fz = dz / d; }
+    n.vel[0] += fx * 0.35 * dt; n.vel[1] += fy * 0.35 * dt; n.vel[2] += fz * 0.35 * dt;
+    const damp = Math.exp(-0.4 * dt);
+    const sp = Math.hypot(n.vel[0], n.vel[1], n.vel[2]);
+    const k = (sp > 0.45 ? 0.45 / sp : 1) * damp;
+    for (let i = 0; i < 3; i++) { n.vel[i] *= k; n.pos[i] += n.vel[i] * dt; }
+    if (launched) {
+      const amt = 1.7 * dt;
+      splat(n.pos, specSplatValue(n.spec, amt), 0.022, dye);
+    }
+  }
+}
 function nearestPlanets () {
   const arr = [];
   for (let i = 0; i < 12; i++) {
@@ -664,18 +723,17 @@ function nearestPlanets () {
   return arr.slice(0, 4);
 }
 function seedPlayer () {
-  const p = PAL[paletteMode];
   for (let i = 0; i < 6; i++) {
     const amt = 0.5 + Math.random() * 0.5;
     splat([
       ship.pos[0] + (Math.random() - 0.5) * 0.05,
       ship.pos[1] + (Math.random() - 0.5) * 0.05,
       ship.pos[2] + (Math.random() - 0.5) * 0.05],
-      [p[0] * amt, p[1] * amt, p[2] * amt, amt * 0.9], 0.028, dye);
+      specSplatValue(species, amt), 0.028, dye);
   }
 }
-function respawn () {
-  toast('consumed by gravity — reborn');
+function respawn (reason) {
+  toast(reason || 'consumed by gravity — reborn');
   Audio.boom();
   if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
   ship.pos = [SPAWN[0] + (Math.random() - 0.5) * 0.2, SPAWN[1], SPAWN[2]];
@@ -718,9 +776,8 @@ function updateShip (dt, now) {
   if (near[0].d2 < Math.pow(near[0].r + 0.015, 2)) respawn();
   /* the cloud's heartbeat: replenish ink at the center */
   if (launched) {
-    const p = PAL[paletteMode];
     const amt = 2.6 * dt;
-    splat(ship.pos, [p[0] * amt, p[1] * amt, p[2] * amt, amt * 0.9], 0.024, dye);
+    splat(ship.pos, specSplatValue(species, amt), 0.024, dye);
   }
   Audio.engine(ship.speed, input.thr);
   return { b, near };
@@ -728,10 +785,15 @@ function updateShip (dt, now) {
 function forcePass (dt, near) {
   forceProg.bind();
   gl.uniform1i(forceProg.u.uVel, vel.read.attach(0));
-  gl.uniform3f(forceProg.u.uPlayer,
-    ship.pos[0] - Math.floor(ship.pos[0]),
-    ship.pos[1] - Math.floor(ship.pos[1]),
-    ship.pos[2] - Math.floor(ship.pos[2]));
+  const bc = new Float32Array(16);
+  const hearts = [ship, NPCS[0], NPCS[1], NPCS[2]];
+  for (let i = 0; i < 4; i++) {
+    bc[i * 4]     = hearts[i].pos[0] - Math.floor(hearts[i].pos[0]);
+    bc[i * 4 + 1] = hearts[i].pos[1] - Math.floor(hearts[i].pos[1]);
+    bc[i * 4 + 2] = hearts[i].pos[2] - Math.floor(hearts[i].pos[2]);
+    bc[i * 4 + 3] = 1.0;
+  }
+  gl.uniform4fv(forceProg.u['uBindC[0]'], bc);
   gl.uniform1f(forceProg.u.uBind, 26.0);
   gl.uniform1f(forceProg.u.uBindR, 0.055);
   gl.uniform1f(forceProg.u.uDt, dt);
@@ -792,12 +854,42 @@ function render (now, b, mat) {
   gl.uniform1f(renderProg.u.uTime, now / 1000);
   gl.uniform4fv(renderProg.u['uSph[0]'], sphFlat);
   gl.uniform3fv(renderProg.u['uSphCol[0]'], sphColFlat);
-  gl.uniform3f(renderProg.u.uShip, ship.pos[0], ship.pos[1], ship.pos[2]);
+  const hf = new Float32Array(16);
+  const hearts = [{ pos: ship.pos, spec: species }, NPCS[0], NPCS[1], NPCS[2]];
+  for (let i = 0; i < 4; i++) {
+    hf[i * 4] = hearts[i].pos[0]; hf[i * 4 + 1] = hearts[i].pos[1];
+    hf[i * 4 + 2] = hearts[i].pos[2]; hf[i * 4 + 3] = hearts[i].spec !== undefined ? hearts[i].spec : species;
+  }
+  gl.uniform4fv(renderProg.u['uHearts[0]'], hf);
   gl.uniform1f(renderProg.u.uThrust, input.thr * (0.6 + 0.4 * Math.sin(now / 60)) + ship.speed * 0.25);
-  const p = PAL[paletteMode];
-  gl.uniform3f(renderProg.u.uShipCol, p[0], p[1], p[2]);
+  gl.uniform3fv(renderProg.u['uSpecCol[0]'], new Float32Array(SPEC_COL.flat()));
   blit(null);
 }
+/* eaten check: read the dye at the player's heart voxel */
+let lastEatCheck = 0, lastMass = 0, readbackOK = true;
+function eatCheck () {
+  if (!readbackOK) return;
+  try {
+    const N = 64, TILES = 8;
+    const px = [ship.pos[0] - Math.floor(ship.pos[0]),
+                ship.pos[1] - Math.floor(ship.pos[1]),
+                ship.pos[2] - Math.floor(ship.pos[2])];
+    const vx = Math.min(N - 1, Math.floor(px[0] * N));
+    const vy = Math.min(N - 1, Math.floor(px[1] * N));
+    const vz = Math.min(N - 1, Math.floor(px[2] * N));
+    const ax = (vz % TILES) * N + vx;
+    const ay = Math.floor(vz / TILES) * N + vy;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dye.read.fbo);
+    const out = new Float32Array(4);
+    gl.readPixels(ax, ay, 1, 1, gl.RGBA, gl.FLOAT, out);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const own = out[species];
+    const pred = out[predatorOf(species)];
+    lastMass = own;
+    if (pred > own * 1.4 + 0.18) respawn('absorbed by a rival nebula — reborn');
+  } catch (err) { readbackOK = false; }
+}
+
 /* ---------------- controls ---------------- */
 function bindPad (id, key) {
   const el = document.getElementById(id);
@@ -866,14 +958,14 @@ window.addEventListener('pointerup', endDrag);
 window.addEventListener('pointercancel', endDrag);
 
 function pulse () {
-  const c = wakeColor();
+  const c = SPEC_COL[species];
   splat(ship.pos, [0, 0, 0, 0], 0.001, vel); // touch the pipeline even at rest
   for (let i = 0; i < 8; i++) {
     const th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1);
     const d = [Math.sin(ph) * Math.cos(th), Math.sin(ph) * Math.sin(th), Math.cos(ph)];
     splat(ship.pos, [d[0] * 0.9, d[1] * 0.9, d[2] * 0.9, 0], 0.05, vel);
   }
-  splat(ship.pos, [c[0] * 0.9, c[1] * 0.9, c[2] * 0.9, 0.8], 0.05, dye);
+  splat(ship.pos, specSplatValue(species, 0.8), 0.05, dye);
   Audio.boom();
   if (navigator.vibrate) navigator.vibrate([16, 28, 12]);
 }
@@ -1052,10 +1144,20 @@ const Audio = (() => {
 /* ---------------- UI ---------------- */
 document.querySelectorAll('.pal').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.pal').forEach(b => b.classList.remove('on'));
+    const s = +btn.dataset.s;
+    if (s === species) return;
+    const now = performance.now();
+    const cd = SWITCH_CD - (now - lastSwitch);
+    if (cd > 0) { toast('color change in ' + Math.ceil(cd / 1000) + 's'); return; }
+    species = s;
+    lastSwitch = now;
+    lastInteraction = now;
+    document.querySelectorAll('.pal').forEach(x => { x.classList.remove('on'); x.classList.add('cd'); });
+    btn.classList.remove('cd');
     btn.classList.add('on');
-    paletteMode = btn.dataset.p;
-    toast(paletteMode);
+    setTimeout(() => document.querySelectorAll('.pal').forEach(x => x.classList.remove('cd')), SWITCH_CD);
+    toast('you are ' + SPEC_NAME[s] + ' now');
+    Audio.bell(392, 0.2);
     pulse();
   });
 });
@@ -1118,14 +1220,19 @@ function tick (now) {
   }
   resizeCanvas();
   const { b, near } = updateShip(dt, now);
+  updateNPCs(dt, now);
   forcePass(dt, near);
   step(dt);
+  if (launched && now - lastEatCheck > 600) { lastEatCheck = now; eatCheck(); }
   Audio.drone(launched && now - lastInteraction < 10000);
   const mat = camMatrix(dt, b);
   render(now, b, mat);
   if (now - speedTimer > 120) {
     speedTimer = now;
-    document.getElementById('speed').textContent = 'v ' + ship.speed.toFixed(2);
+    const cd = Math.max(0, SWITCH_CD - (now - lastSwitch));
+    document.getElementById('speed').textContent =
+      'v ' + ship.speed.toFixed(2) + '  m ' + lastMass.toFixed(1) +
+      (cd > 0 ? '  cd ' + Math.ceil(cd / 1000) : '');
   }
   if (wantCapture) capture();
   requestAnimationFrame(tick);

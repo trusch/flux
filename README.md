@@ -13,7 +13,7 @@ No libraries. No build step. No network calls. 44KB.
 
 ## Sequel: NEBULA — flux in three dimensions
 
-[`nebula.html`](nebula.html) — **[fly it live](https://trusch.github.io/flux/nebula.html)** — a 64×64×64 Navier-Stokes solver volume-raymarched into glowing nebulae, and **you are made of it**: the player is a cloud of ink held together by an invisible binding force written into the fluid's velocity field. Thrust and your body trails behind you like a comet; planets bend your path AND tear ink off your body as you pass; fall onto one and you're reborn. Toroidal wrapped space, third-person chase camera with banking, on-screen D-pad + thrust/brake (arrows + W/S on desktop), speed-following engine audio.
+[`nebula.html`](nebula.html) — **[fly it live](https://trusch.github.io/flux/nebula.html)** — a 64×64×64 Navier-Stokes solver volume-raymarched into glowing nebulae, and **you are made of it**: the player is a cloud of ink held together by an invisible binding force written into the fluid's velocity field. Thrust and your body trails behind you like a comet; planets bend your path AND tear ink off your body as you pass; fall onto one and you're reborn. Toroidal wrapped space, third-person chase camera with banking, on-screen D-pad + thrust/brake (arrows + W/S on desktop), speed-following engine audio. And it's an ecosystem: crimson, emerald and azure nebulae roam the void — wild clouds and three NPC rivals — locked in a fair circle computed per voxel (crimson eats emerald, emerald eats azure, azure eats crimson). Switch your own color any time on an 8s cooldown; linger inside a predator's cloud and you're absorbed and reborn.
 
 ## What it does
 
