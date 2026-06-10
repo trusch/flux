@@ -1,0 +1,1136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#020208">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>NEBULA — flux in three dimensions</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { height:100%; overflow:hidden; background:#020208; touch-action:none; overscroll-behavior:none; }
+  body { font-family:-apple-system, 'SF Pro Display', 'Segoe UI', Roboto, Helvetica, sans-serif; user-select:none; -webkit-user-select:none; }
+  #c { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  #veil { position:fixed; inset:0; background:#020208; z-index:9; pointer-events:none; transition:opacity 2s ease; }
+  #hint {
+    position:fixed; left:0; right:0; bottom:34vh; text-align:center; z-index:11; pointer-events:none;
+    color:rgba(255,255,255,.6); font-size:13px; letter-spacing:.34em; text-transform:uppercase; font-weight:300;
+    animation:pulse 2.6s ease-in-out infinite; transition:opacity .6s ease;
+  }
+  #hint b { display:block; font-weight:200; font-size:10px; letter-spacing:.4em; margin-top:10px; color:rgba(255,255,255,.3); }
+  @keyframes pulse { 0%,100%{opacity:.35} 50%{opacity:1} }
+  #brand {
+    position:fixed; top:calc(env(safe-area-inset-top, 0px) + 16px); left:0; right:0; text-align:center; z-index:5;
+    color:rgba(255,255,255,.8); font-weight:200; font-size:15px; letter-spacing:.6em; text-indent:.6em;
+    opacity:0; transition:opacity 1.5s ease .5s; pointer-events:none;
+  }
+  #brand span { display:block; font-size:8px; letter-spacing:.3em; color:rgba(255,255,255,.28); margin-top:5px; }
+  #ui {
+    position:fixed; top:calc(env(safe-area-inset-top, 0px) + 14px); right:14px;
+    display:flex; flex-direction:column; align-items:center; gap:10px; padding:10px; border-radius:999px; z-index:6;
+    background:rgba(10,12,24,.45); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);
+    border:1px solid rgba(255,255,255,.09); box-shadow:0 8px 40px rgba(0,0,0,.5);
+    opacity:0; pointer-events:none; transition:opacity .9s ease;
+  }
+  #ui.show { opacity:1; pointer-events:auto; }
+  .pal {
+    width:26px; height:26px; border-radius:50%; border:2px solid transparent; cursor:pointer; padding:0;
+    transition:transform .25s ease, border-color .25s ease; outline:none;
+  }
+  .pal[data-p="emerald"] { background:radial-gradient(circle at 35% 35%, #bfffd0, #19c46a 55%, #03240f); }
+  .pal[data-p="violet"]  { background:radial-gradient(circle at 35% 35%, #e6c8ff, #8d3bff 55%, #170433); }
+  .pal[data-p="ember"]   { background:radial-gradient(circle at 35% 35%, #ffd9a0, #ff5e1f 55%, #2a0b02); }
+  .pal[data-p="ice"]     { background:radial-gradient(circle at 35% 35%, #d8f7ff, #2da9ff 55%, #04182e); }
+  .pal.on { border-color:rgba(255,255,255,.95); transform:scale(1.18); }
+  .ib {
+    width:32px; height:32px; border-radius:50%; border:none; background:rgba(255,255,255,.07); cursor:pointer;
+    display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,.85); transition:transform .15s;
+  }
+  .ib:active { transform:scale(.88); }
+  .ib.off { color:rgba(255,255,255,.28); }
+  .ib svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+  /* flight controls */
+  #ctl { position:fixed; inset:0; z-index:7; pointer-events:none; opacity:0; transition:opacity 1s ease .8s; }
+  #ctl.show { opacity:1; }
+  .pad {
+    position:absolute; width:54px; height:54px; border-radius:50%; pointer-events:auto;
+    background:rgba(14,16,30,.42); border:1px solid rgba(255,255,255,.13);
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,.75);
+    font-size:18px; transition:background .12s, transform .12s;
+  }
+  .pad.on { background:rgba(110,255,170,.25); transform:scale(1.08); border-color:rgba(160,255,190,.5); }
+  .pad svg { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  #b-up    { left:calc(14px + 62px); bottom:calc(env(safe-area-inset-bottom,0px) + 138px); }
+  #b-down  { left:calc(14px + 62px); bottom:calc(env(safe-area-inset-bottom,0px) + 14px); }
+  #b-left  { left:14px; bottom:calc(env(safe-area-inset-bottom,0px) + 76px); }
+  #b-right { left:calc(14px + 124px); bottom:calc(env(safe-area-inset-bottom,0px) + 76px); }
+  #b-thr   { right:14px; bottom:calc(env(safe-area-inset-bottom,0px) + 96px); width:64px; height:64px; }
+  #b-brk   { right:14px; bottom:calc(env(safe-area-inset-bottom,0px) + 18px); width:64px; height:64px; }
+  #b-thr.on { background:rgba(110,255,170,.3); }
+  #b-brk.on { background:rgba(255,110,110,.28); border-color:rgba(255,160,160,.5); }
+  #speed {
+    position:absolute; right:22px; bottom:calc(env(safe-area-inset-bottom,0px) + 172px);
+    color:rgba(255,255,255,.5); font-size:10px; letter-spacing:.22em; font-family:monospace; pointer-events:none;
+  }
+  #toast {
+    position:fixed; top:calc(env(safe-area-inset-top,0px) + 60px); left:50%; transform:translateX(-50%);
+    background:rgba(10,12,24,.7); backdrop-filter:blur(12px); color:rgba(255,255,255,.85); z-index:20;
+    padding:8px 18px; border-radius:999px; font-size:12px; letter-spacing:.15em; border:1px solid rgba(255,255,255,.1);
+    opacity:0; transition:opacity .4s ease; pointer-events:none;
+  }
+  #about {
+    position:fixed; inset:0; z-index:30; display:flex; align-items:center; justify-content:center; padding:20px;
+    background:rgba(2,2,8,.55); backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px);
+    opacity:0; pointer-events:none; transition:opacity .35s ease;
+  }
+  #about.open { opacity:1; pointer-events:auto; }
+  #about .card {
+    max-width:420px; max-height:calc(100vh - 80px); overflow-y:auto; -webkit-overflow-scrolling:touch;
+    background:rgba(10,12,24,.72); border:1px solid rgba(255,255,255,.1); border-radius:24px;
+    padding:28px 26px; color:rgba(255,255,255,.82); font-weight:300; font-size:13.5px; line-height:1.75;
+    box-shadow:0 20px 80px rgba(0,0,0,.6);
+  }
+  #about h2 { font-weight:200; font-size:22px; letter-spacing:.5em; text-indent:.5em; text-align:center; margin-bottom:4px; color:#fff; }
+  #about h3 { font-weight:400; font-size:10px; letter-spacing:.3em; text-transform:uppercase; color:rgba(255,255,255,.45); margin:20px 0 8px; }
+  #about .sub { text-align:center; font-size:10px; letter-spacing:.32em; color:rgba(255,255,255,.35); margin-bottom:18px; text-transform:uppercase; }
+  #about blockquote {
+    border-left:2px solid rgba(120,255,170,.5); padding:10px 14px; margin:8px 0;
+    background:rgba(120,255,170,.06); border-radius:0 12px 12px 0; font-style:italic; color:rgba(255,255,255,.7); font-size:12.5px;
+  }
+  #about .tech { color:rgba(255,255,255,.55); font-size:12px; }
+  #about .close {
+    display:block; margin:22px auto 0; padding:10px 34px; border-radius:999px; border:1px solid rgba(255,255,255,.18);
+    background:rgba(255,255,255,.08); color:#fff; font-size:12px; letter-spacing:.25em; text-transform:uppercase; cursor:pointer;
+  }
+  #about a { color:#8fffb5; text-decoration:none; }
+  #nogl { position:fixed; inset:0; display:none; place-items:center; color:#889; z-index:50; text-align:center; padding:2em; font-size:14px; line-height:1.7; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="veil"></div>
+<div id="hint">touch to awaken<b>you are the nebula · it follows your heart</b></div>
+<div id="brand">NEBULA<span>flux in three dimensions</span></div>
+<div id="ui">
+  <button class="pal on" data-p="emerald" aria-label="emerald palette"></button>
+  <button class="pal" data-p="violet" aria-label="violet palette"></button>
+  <button class="pal" data-p="ember" aria-label="ember palette"></button>
+  <button class="pal" data-p="ice" aria-label="ice palette"></button>
+  <button class="ib" id="snd" aria-label="toggle sound"><svg viewBox="0 0 24 24"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path id="sndwave" d="M15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13"/></svg></button>
+  <button class="ib" id="cam" aria-label="save image"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg></button>
+  <button class="ib" id="info" aria-label="about"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v6"/><path d="M12 7.2v.2"/></svg></button>
+</div>
+<div id="ctl">
+  <div class="pad" id="b-up"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></div>
+  <div class="pad" id="b-down"><svg viewBox="0 0 24 24"><path d="M12 5v14M19 12l-7 7-7-7"/></svg></div>
+  <div class="pad" id="b-left"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg></div>
+  <div class="pad" id="b-right"><svg viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+  <div class="pad" id="b-thr"><svg viewBox="0 0 24 24"><path d="M12 19V8M6 13l6-6 6 6M6 19h12" opacity=".9"/></svg></div>
+  <div class="pad" id="b-brk"><svg viewBox="0 0 24 24"><path d="M6 9h12M6 13h12M6 17h8"/></svg></div>
+  <div id="speed">v 0.00</div>
+</div>
+<div id="about">
+  <div class="card">
+    <h2>NEBULA</h2>
+    <div class="sub">flux in three dimensions</div>
+    <p>A real fluid simulation — but this time the water is <i>space itself</i>, and <b>you are made of it</b>. A 64×64×64 Navier-Stokes solver runs on your GPU, volume-raymarched into glowing nebulae. The player is a cloud of ink held together by an invisible force pulling it toward your heart — accelerate and your body trails behind you like a comet; coast and it gathers itself back. The planets aren't decoration: their gravity bends your path AND tears ink from your body as you pass. Fall onto one and you are consumed — and reborn.</p>
+    <p><b>D-pad</b> steers your heart, <b>thrust</b> accelerates, <b>brake</b> below it. Drag the screen to look. <b>Double-tap</b> detonates your own body outward — the binding force gathers it back. Skim a planet to feel gravity steal your ink; fight free or fall.</p>
+    <h3>The origin</h3>
+    <p>Part of a single-prompt AI showcase series that began with <a href="https://trusch.github.io/flux/" target="_blank" rel="noopener">FLUX</a>. This one came from:</p>
+    <blockquote>"I want also a fluid simulation but it should be in 3d and the player is able to move the fluid in space… and we need some spheres in the space like planets or stars so we have something we are relative to, so we see the movement."</blockquote>
+    <p>Designed, written and verified by <b>Claude</b>, running on Anthropic's <b>claude&#8209;fable&#8209;5</b> model, as Claude&nbsp;Code.</p>
+    <h3>Under the hood</h3>
+    <p class="tech">One self-contained HTML file, zero libraries. The 3D grid lives as a tiled 2D atlas (64³ → 512×512, manual trilinear sampling with toroidal wrap), so every solver pass — semi-Lagrangian advection, divergence, 8 Jacobi pressure iterations, gradient subtraction, wake splatting — is an ordinary fullscreen fragment pass. The display pass raymarches the dye volume (emission + absorption, jittered steps) and ray-traces twelve analytic spheres with a procedural starfield behind. Resolution adapts to hold frame rate. Audio: an engine that follows your speed, thrust and brake gestures, distance bells — raw oscillators and shaped noise through a runtime convolution reverb.</p>
+    <p class="tech" style="margin-top:10px">Source: <a href="https://github.com/trusch/flux" target="_blank" rel="noopener">github.com/trusch/flux</a> (nebula.html) · Siblings: <a href="https://trusch.github.io/portal/" target="_blank" rel="noopener">PORTAL</a>, <a href="https://trusch.github.io/echo/" target="_blank" rel="noopener">ECHO</a>, <a href="https://trusch.github.io/echo/fluid.html" target="_blank" rel="noopener">the fluid mirror</a></p>
+    <button class="close" id="ab-close">return to the void</button>
+  </div>
+</div>
+<div id="toast"></div>
+<div id="nogl">your browser doesn't support WebGL —<br>NEBULA needs a GPU to exist.</div>
+<script>
+'use strict';
+/* ============================================================
+   NEBULA — flux in three dimensions
+   3D Navier-Stokes in a tiled atlas + volume raymarching
+   one file. no libraries. made by Claude.
+   ============================================================ */
+
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { alpha:false, depth:false, stencil:false, antialias:false })
+        || canvas.getContext('webgl',  { alpha:false, depth:false, stencil:false, antialias:false });
+if (!gl) { document.getElementById('nogl').style.display = 'grid'; throw new Error('no webgl'); }
+const isWebGL2 = !!gl.texStorage2D;
+let halfType, formatRGBA;
+if (isWebGL2) {
+  gl.getExtension('EXT_color_buffer_float');
+  gl.getExtension('OES_texture_float_linear');
+  halfType = gl.HALF_FLOAT;
+  formatRGBA = { internalFormat: gl.RGBA16F, format: gl.RGBA };
+} else {
+  const hf = gl.getExtension('OES_texture_half_float');
+  gl.getExtension('OES_texture_half_float_linear');
+  halfType = hf && hf.HALF_FLOAT_OES;
+  formatRGBA = { internalFormat: gl.RGBA, format: gl.RGBA };
+}
+gl.clearColor(0, 0, 0, 0);
+
+let launched = false;
+let paletteMode = 'emerald';
+let lastInteraction = 0;
+
+/* ---------------- shaders ---------------- */
+const baseVS = `
+  precision highp float;
+  attribute vec2 aPosition;
+  varying vec2 vUv;
+  void main () { vUv = aPosition * 0.5 + 0.5; gl_Position = vec4(aPosition, 0.0, 1.0); }`;
+
+/* shared atlas math: 64^3 voxels tiled 8x8 into a 512^2 texture,
+   toroidal wrap, manual trilinear (hardware bilinear in-slice) */
+const ATLAS = `
+  const float N = 64.0;
+  const float TILES = 8.0;
+  vec3 domainPosOf (vec2 fragUV) {
+    vec2 px = fragUV * (N * TILES);
+    vec2 tile = floor(px / N);
+    float slice = tile.y * TILES + tile.x;
+    return vec3(mod(px, N), slice + 0.5) / N;
+  }
+  vec4 fetchV (sampler2D tex, vec3 v) {       // integer voxel coords, wraps
+    vec3 w = mod(v + N, N);
+    float z = floor(w.z);
+    vec2 tile = vec2(mod(z, TILES), floor(z / TILES));
+    vec2 uv = (tile * N + w.xy + 0.5) / (N * TILES);
+    return texture2D(tex, uv);
+  }
+  vec4 sampleTri (sampler2D tex, vec3 p) {    // p in domain units, wraps
+    vec3 v = fract(p) * N;
+    vec2 xy = clamp(v.xy - 0.5, vec2(0.001), vec2(N - 1.001));
+    float zf = v.z - 0.5;
+    float z0 = floor(zf);
+    float fz = zf - z0;
+    float za = mod(z0 + N, N);
+    float zb = mod(za + 1.0, N);
+    vec2 ta = vec2(mod(za, TILES), floor(za / TILES));
+    vec2 tb = vec2(mod(zb, TILES), floor(zb / TILES));
+    vec2 uva = (ta * N + xy + 0.5) / (N * TILES);
+    vec2 uvb = (tb * N + xy + 0.5) / (N * TILES);
+    return mix(texture2D(tex, uva), texture2D(tex, uvb), fz);
+  }`;
+
+const advectFS = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uVel, uSrc;
+  uniform float uDt, uDiss;
+  ${ATLAS}
+  void main () {
+    vec3 p = domainPosOf(vUv);
+    vec3 vel = sampleTri(uVel, p).xyz;
+    vec3 pb = p - vel * uDt;
+    vec4 r = sampleTri(uSrc, pb);
+    gl_FragColor = r / (1.0 + uDiss * uDt);
+  }`;
+
+const divergenceFS = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uVel;
+  ${ATLAS}
+  void main () {
+    vec3 vi = floor(domainPosOf(vUv) * N);
+    float R = fetchV(uVel, vi + vec3(1,0,0)).x;
+    float L = fetchV(uVel, vi - vec3(1,0,0)).x;
+    float T = fetchV(uVel, vi + vec3(0,1,0)).y;
+    float B = fetchV(uVel, vi - vec3(0,1,0)).y;
+    float F = fetchV(uVel, vi + vec3(0,0,1)).z;
+    float K = fetchV(uVel, vi - vec3(0,0,1)).z;
+    gl_FragColor = vec4(0.5 * (R - L + T - B + F - K), 0.0, 0.0, 1.0);
+  }`;
+
+const jacobiFS = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uPressure, uDivergence;
+  ${ATLAS}
+  void main () {
+    vec3 vi = floor(domainPosOf(vUv) * N);
+    float s =
+      fetchV(uPressure, vi + vec3(1,0,0)).x + fetchV(uPressure, vi - vec3(1,0,0)).x +
+      fetchV(uPressure, vi + vec3(0,1,0)).x + fetchV(uPressure, vi - vec3(0,1,0)).x +
+      fetchV(uPressure, vi + vec3(0,0,1)).x + fetchV(uPressure, vi - vec3(0,0,1)).x;
+    float div = texture2D(uDivergence, vUv).x;
+    gl_FragColor = vec4((s - div) / 6.0, 0.0, 0.0, 1.0);
+  }`;
+
+const gradientFS = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uPressure, uVel;
+  ${ATLAS}
+  void main () {
+    vec3 vi = floor(domainPosOf(vUv) * N);
+    vec3 grad = 0.5 * vec3(
+      fetchV(uPressure, vi + vec3(1,0,0)).x - fetchV(uPressure, vi - vec3(1,0,0)).x,
+      fetchV(uPressure, vi + vec3(0,1,0)).x - fetchV(uPressure, vi - vec3(0,1,0)).x,
+      fetchV(uPressure, vi + vec3(0,0,1)).x - fetchV(uPressure, vi - vec3(0,0,1)).x);
+    vec3 vel = texture2D(uVel, vUv).xyz - grad;
+    gl_FragColor = vec4(vel, 1.0);
+  }`;
+
+const splatFS = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uTarget;
+  uniform vec3 uPoint;        // domain coords
+  uniform vec4 uValue;        // xyz add + w add (density for dye)
+  uniform float uRadius;      // domain units
+  ${ATLAS}
+  void main () {
+    vec3 p = domainPosOf(vUv);
+    vec3 d = p - uPoint;
+    d -= floor(d + 0.5);      // min-image wrap
+    float w = exp(-dot(d, d) / (uRadius * uRadius));
+    gl_FragColor = texture2D(uTarget, vUv) + uValue * w;
+  }`;
+
+/* the invisible force: pulls ink toward the player's center; planet
+   gravity tears it away — both written straight into the velocity field */
+const forceFS = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uVel;
+  uniform vec3 uPlayer;       // domain coords
+  uniform float uBind, uBindR, uDt;
+  uniform vec4 uGrav[4];      // xyz domain coords, w strength
+  ${ATLAS}
+  void main () {
+    vec3 p = domainPosOf(vUv);
+    vec3 v = texture2D(uVel, vUv).xyz;
+    vec3 d = p - uPlayer;
+    d -= floor(d + 0.5);
+    float w = exp(-dot(d, d) / (uBindR * uBindR));
+    v += (-d * uBind - v * 2.2) * w * uDt;
+    for (int i = 0; i < 4; i++) {
+      vec3 g = p - uGrav[i].xyz;
+      g -= floor(g + 0.5);
+      float r2 = max(dot(g, g), 0.0006);
+      float a = min(uGrav[i].w / r2, 1.4);
+      v -= (g / sqrt(r2)) * a * uDt;
+    }
+    gl_FragColor = vec4(v, 1.0);
+  }`;
+
+const clearFS = `
+  precision mediump float;
+  varying vec2 vUv;
+  uniform sampler2D uTexture;
+  uniform float uValue;
+  void main () { gl_FragColor = uValue * texture2D(uTexture, vUv); }`;
+
+const renderFS = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uDye;
+  uniform vec2 uRes;
+  uniform vec3 uPos;          // camera world position
+  uniform mat3 uCam;
+  uniform float uTime;
+  uniform vec4 uSph[12];      // xyz center, w radius (world)
+  uniform vec3 uSphCol[12];
+  uniform vec3 uShip;         // the player cloud's invisible center
+  uniform float uThrust;      // 0..1 drive output
+  uniform vec3 uShipCol;      // palette accent
+  ${ATLAS}
+  float hash13 (vec3 p3) {
+    p3 = fract(p3 * 0.1031);
+    p3 += dot(p3, p3.zyx + 31.32);
+    return fract((p3.x + p3.y) * p3.z);
+  }
+  vec3 stars (vec3 rd) {
+    vec3 col = vec3(0.0);
+    for (int i = 0; i < 2; i++) {
+      float scale = i == 0 ? 60.0 : 130.0;
+      vec3 cell = floor(rd * scale);
+      float h = hash13(cell);
+      if (h > 0.9915) {
+        vec3 cp = (cell + 0.5) / scale;
+        float d = length(rd - normalize(cp));
+        float tw = 0.75 + 0.25 * sin(uTime * (1.0 + h * 4.0) + h * 40.0);
+        col += vec3(0.9, 0.95, 1.0) * exp(-d * 1600.0) * (h - 0.9915) * 130.0 * tw;
+      }
+    }
+    /* a distant cold sun */
+    vec3 sun = normalize(vec3(0.4, 0.25, -0.85));
+    float s = clamp(dot(rd, sun), 0.0, 1.0);
+    col += vec3(0.6, 0.75, 1.0) * (pow(s, 600.0) * 1.4 + pow(s, 8.0) * 0.04);
+    return col;
+  }
+  void main () {
+    vec2 uv = (vUv * 2.0 - 1.0) * vec2(uRes.x / uRes.y, 1.0);
+    vec3 rd = normalize(uCam * normalize(vec3(uv, -1.5)));
+    vec3 ro = uPos;
+    const float FAR = 3.2;
+
+    /* analytic spheres: nearest hit */
+    float tHit = FAR + 10.0;
+    int hitId = -1;
+    for (int i = 0; i < 12; i++) {
+      vec3 oc = ro - uSph[i].xyz;
+      float b = dot(oc, rd);
+      float cc = dot(oc, oc) - uSph[i].w * uSph[i].w;
+      float h = b * b - cc;
+      if (h > 0.0) {
+        float t = -b - sqrt(h);
+        if (t > 0.0 && t < tHit) { tHit = t; hitId = i; }
+      }
+    }
+
+    /* volume march: emission + absorption through the dye field */
+    float tEnd = min(tHit, FAR);
+    const int STEPS = 40;
+    float ds = FAR / float(STEPS);
+    float jitter = hash13(vec3(gl_FragCoord.xy, fract(uTime) * 61.7));
+    float t = ds * (0.3 + 0.7 * jitter);
+    vec3 col = vec3(0.0);
+    float trans = 1.0;
+    for (int i = 0; i < STEPS; i++) {
+      if (t > tEnd || trans < 0.02) break;
+      vec3 wp = ro + rd * t;
+      vec4 s = sampleTri(uDye, wp);
+      float dens = s.a;
+      if (dens > 0.003) {
+        float fade = exp(-t * 0.9);
+        col += s.rgb * (5.5 * ds) * trans * fade;
+        trans *= exp(-dens * 5.0 * ds * fade);
+      }
+      t += ds;
+    }
+
+    /* the cloud's heart: a soft mote so you can always find yourself */
+    {
+      vec3 sp = uShip - ro;
+      float tp = clamp(dot(sp, rd), 0.0, FAR);
+      float dd = length(sp - rd * tp);
+      float occ = (hitId >= 0 && tp > tHit + 0.002) ? 0.2 : 1.0;
+      col += uShipCol * (exp(-dd * 200.0) * (0.8 + 1.8 * uThrust) + exp(-dd * 36.0) * 0.07) * occ;
+    }
+
+    /* what the ray ends on */
+    if (hitId >= 0 && tHit < FAR) {
+      vec3 hp = ro + rd * tHit;
+      /* ES 1.00: array indices must be constant — fetch via loop */
+      vec3 base = vec3(0.0), pcen = vec3(0.0);
+      for (int i = 0; i < 12; i++) if (i == hitId) { base = uSphCol[i]; pcen = uSph[i].xyz; }
+      vec3 n = normalize(hp - pcen);
+      vec3 sun = normalize(vec3(0.4, 0.25, -0.85));
+      float dif = clamp(dot(n, sun), 0.0, 1.0);
+      float rim = pow(1.0 - clamp(dot(n, -rd), 0.0, 1.0), 3.0);
+      vec3 pc = base * (0.12 + 0.85 * dif) + base * rim * 0.7 + vec3(0.5, 0.6, 0.8) * rim * 0.25;
+      float fog = exp(-tHit * 0.30);
+      col += trans * pc * fog;
+      col += trans * stars(rd) * (1.0 - fog) * 0.5;
+    } else {
+      col += trans * stars(rd);
+    }
+
+    col = col / (1.0 + col);
+    col = pow(col, vec3(0.4545));
+    col = mix(col, col * col * (3.0 - 2.0 * col), 0.35);
+    col *= 1.0 - 0.3 * dot(vUv - 0.5, vUv - 0.5) * 2.6;
+    gl_FragColor = vec4(col, 1.0);
+  }`;
+/* ---------------- GL plumbing ---------------- */
+function compile (type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(s));
+  return s;
+}
+class Program {
+  constructor (fsSource) {
+    const p = gl.createProgram();
+    gl.attachShader(p, compile(gl.VERTEX_SHADER, baseVS));
+    gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fsSource));
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) console.error(gl.getProgramInfoLog(p));
+    this.program = p;
+    this.u = {};
+    const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < n; i++) {
+      const name = gl.getActiveUniform(p, i).name;
+      this.u[name] = gl.getUniformLocation(p, name);
+    }
+  }
+  bind () { gl.useProgram(this.program); }
+}
+const quad = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, -1,1, 1,1, -1,-1, 1,1, 1,-1]), gl.STATIC_DRAW);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+gl.enableVertexAttribArray(0);
+function blit (target) {
+  if (target == null) {
+    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  } else {
+    gl.viewport(0, 0, target.width, target.height);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
+  }
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
+const SIZE = 512;  // atlas: 64^3 as 8x8 tiles of 64^2
+function createAtlas (filter) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, formatRGBA.internalFormat, SIZE, SIZE, 0, formatRGBA.format, halfType, null);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  return { tex, fbo, width: SIZE, height: SIZE,
+           attach (id) { gl.activeTexture(gl.TEXTURE0 + id); gl.bindTexture(gl.TEXTURE_2D, tex); return id; } };
+}
+function createDouble (filter) {
+  let a = createAtlas(filter), b = createAtlas(filter);
+  return { get read () { return a; }, get write () { return b; },
+           swap () { const t = a; a = b; b = t; } };
+}
+const vel = createDouble(gl.LINEAR);
+const dye = createDouble(gl.LINEAR);
+const pressure = createDouble(gl.NEAREST);
+const divergence = createAtlas(gl.NEAREST);
+
+const advectProg = new Program(advectFS);
+const divProg    = new Program(divergenceFS);
+const jacProg    = new Program(jacobiFS);
+const gradProg   = new Program(gradientFS);
+const splatProg  = new Program(splatFS);
+const clearProg  = new Program(clearFS);
+const forceProg  = new Program(forceFS);
+const renderProg = new Program(renderFS);
+
+/* ---------------- world: planets ---------------- */
+function mulberry (seed) {
+  return () => {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const rng = mulberry(1337);
+const SPHERES = [], SPHCOL = [];
+const PLANET_COLS = [
+  [0.85, 0.55, 0.30], [0.40, 0.60, 0.85], [0.75, 0.40, 0.55], [0.50, 0.75, 0.55],
+  [0.80, 0.70, 0.45], [0.45, 0.45, 0.75], [0.70, 0.50, 0.35], [0.55, 0.65, 0.70],
+];
+for (let i = 0; i < 12; i++) {
+  const th = rng() * Math.PI * 2, ph = Math.acos(2 * rng() - 1);
+  const dist = 1.3 + rng() * 3.2;
+  SPHERES.push(
+    Math.sin(ph) * Math.cos(th) * dist,
+    Math.sin(ph) * Math.sin(th) * dist,
+    Math.cos(ph) * dist,
+    0.10 + rng() * 0.34);
+  const c = PLANET_COLS[i % 8];
+  const v = 0.85 + rng() * 0.3;
+  SPHCOL.push(c[0] * v, c[1] * v, c[2] * v);
+}
+/* a guaranteed home planet right in the opening shot */
+SPHERES[0] = 0.18; SPHERES[1] = -0.02; SPHERES[2] = -0.85; SPHERES[3] = 0.40;
+SPHCOL[0] = 0.85; SPHCOL[1] = 0.62; SPHCOL[2] = 0.38;
+const sphFlat = new Float32Array(SPHERES);
+const sphColFlat = new Float32Array(SPHCOL);
+
+/* ---------------- palettes ---------------- */
+const PAL = {
+  emerald: [0.25, 1.00, 0.50],
+  violet:  [0.62, 0.32, 1.00],
+  ember:   [1.00, 0.45, 0.16],
+  ice:     [0.40, 0.80, 1.00],
+};
+function wakeColor () {
+  const p = PAL[paletteMode];
+  const j = 0.75 + Math.random() * 0.5;
+  return [p[0] * j, p[1] * j, p[2] * j];
+}
+
+/* ---------------- sim ---------------- */
+function splat (point, value, radius, target) {
+  splatProg.bind();
+  gl.uniform1i(splatProg.u.uTarget, target.read.attach(0));
+  gl.uniform3f(splatProg.u.uPoint,
+    point[0] - Math.floor(point[0]),
+    point[1] - Math.floor(point[1]),
+    point[2] - Math.floor(point[2]));
+  gl.uniform4f(splatProg.u.uValue, value[0], value[1], value[2], value[3]);
+  gl.uniform1f(splatProg.u.uRadius, radius);
+  blit(target.write);
+  target.swap();
+}
+function step (dt) {
+  advectProg.bind();
+  gl.uniform1i(advectProg.u.uVel, vel.read.attach(0));
+  gl.uniform1i(advectProg.u.uSrc, vel.read.attach(0));
+  gl.uniform1f(advectProg.u.uDt, dt);
+  gl.uniform1f(advectProg.u.uDiss, 0.40);
+  blit(vel.write);
+  vel.swap();
+
+  gl.uniform1i(advectProg.u.uVel, vel.read.attach(0));
+  gl.uniform1i(advectProg.u.uSrc, dye.read.attach(1));
+  gl.uniform1f(advectProg.u.uDiss, 0.22);
+  blit(dye.write);
+  dye.swap();
+
+  divProg.bind();
+  gl.uniform1i(divProg.u.uVel, vel.read.attach(0));
+  blit(divergence);
+
+  clearProg.bind();
+  gl.uniform1i(clearProg.u.uTexture, pressure.read.attach(0));
+  gl.uniform1f(clearProg.u.uValue, 0.6);
+  blit(pressure.write);
+  pressure.swap();
+
+  jacProg.bind();
+  gl.uniform1i(jacProg.u.uDivergence, divergence.attach(0));
+  for (let i = 0; i < 8; i++) {
+    gl.uniform1i(jacProg.u.uPressure, pressure.read.attach(1));
+    blit(pressure.write);
+    pressure.swap();
+  }
+
+  gradProg.bind();
+  gl.uniform1i(gradProg.u.uPressure, pressure.read.attach(0));
+  gl.uniform1i(gradProg.u.uVel, vel.read.attach(1));
+  blit(vel.write);
+  vel.swap();
+}
+/* seed the void so launch isn't empty */
+function seed () {
+  for (let i = 0; i < 14; i++) {
+    const c = wakeColor();
+    const amt = 0.35 + rng() * 0.5;
+    splat([rng(), rng(), rng()],
+      [c[0] * amt, c[1] * amt, c[2] * amt, amt * 0.8],
+      0.04 + rng() * 0.07, dye);
+    splat([rng(), rng(), rng()],
+      [(rng() - 0.5) * 0.3, (rng() - 0.5) * 0.3, (rng() - 0.5) * 0.3, 0],
+      0.08, vel);
+  }
+}
+seed();
+
+/* ---------------- the player: an invisible center the cloud clings to ---------------- */
+const SPAWN = [0.18, 0.05, 0.9];
+const ship = { pos: SPAWN.slice(), vel: [0, 0, 0], yaw: 0, pitch: 0, roll: 0,
+               speed: 0, yawV: 0, pitchV: 0 };
+const camPos = [ship.pos[0], ship.pos[1] + 0.05, ship.pos[2] + 0.2];
+const input = { up: 0, down: 0, left: 0, right: 0, thr: 0, brk: 0 };
+
+function shipBasis () {
+  const cy = Math.cos(ship.yaw), sy = Math.sin(ship.yaw);
+  const cp = Math.cos(ship.pitch), sp = Math.sin(ship.pitch);
+  const fwd = [sy * cp, sp, -cy * cp];
+  let right = [cy, 0, sy];
+  let up = [
+    fwd[1] * right[2] - fwd[2] * right[1],
+    fwd[2] * right[0] - fwd[0] * right[2],
+    fwd[0] * right[1] - fwd[1] * right[0]];
+  up = [-up[0], -up[1], -up[2]];
+  const cr = Math.cos(ship.roll), sr = Math.sin(ship.roll);
+  const r2 = [right[0] * cr + up[0] * sr, right[1] * cr + up[1] * sr, right[2] * cr + up[2] * sr];
+  const u2 = [up[0] * cr - right[0] * sr, up[1] * cr - right[1] * sr, up[2] * cr - right[2] * sr];
+  return { fwd, right: r2, up: u2 };
+}
+function nearestPlanets () {
+  const arr = [];
+  for (let i = 0; i < 12; i++) {
+    const cx = SPHERES[i * 4], cy = SPHERES[i * 4 + 1], cz = SPHERES[i * 4 + 2], r = SPHERES[i * 4 + 3];
+    const dx = ship.pos[0] - cx, dy = ship.pos[1] - cy, dz = ship.pos[2] - cz;
+    arr.push({ c: [cx, cy, cz], r, d2: dx * dx + dy * dy + dz * dz });
+  }
+  arr.sort((p, q) => p.d2 - q.d2);
+  return arr.slice(0, 4);
+}
+function seedPlayer () {
+  const p = PAL[paletteMode];
+  for (let i = 0; i < 6; i++) {
+    const amt = 0.5 + Math.random() * 0.5;
+    splat([
+      ship.pos[0] + (Math.random() - 0.5) * 0.05,
+      ship.pos[1] + (Math.random() - 0.5) * 0.05,
+      ship.pos[2] + (Math.random() - 0.5) * 0.05],
+      [p[0] * amt, p[1] * amt, p[2] * amt, amt * 0.9], 0.028, dye);
+  }
+}
+function respawn () {
+  toast('consumed by gravity — reborn');
+  Audio.boom();
+  if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
+  ship.pos = [SPAWN[0] + (Math.random() - 0.5) * 0.2, SPAWN[1], SPAWN[2]];
+  ship.vel = [0, 0, 0];
+  ship.yaw = 0; ship.pitch = 0; ship.roll = 0;
+  camPos[0] = ship.pos[0]; camPos[1] = ship.pos[1] + 0.05; camPos[2] = ship.pos[2] + 0.2;
+  seedPlayer();
+}
+function updateShip (dt, now) {
+  const idle = launched && now - lastInteraction > 8000;
+  const turnX = (input.right - input.left) + (idle ? 0.25 * Math.sin(now / 5200) : 0);
+  const turnY = (input.up - input.down) + (idle ? 0.10 * Math.sin(now / 7700) : 0);
+  ship.yawV += (turnX * 1.5 - ship.yawV) * (1 - Math.exp(-dt * 6));
+  ship.pitchV += (turnY * 1.2 - ship.pitchV) * (1 - Math.exp(-dt * 6));
+  ship.yaw += ship.yawV * dt;
+  ship.pitch = Math.max(-1.35, Math.min(1.35, ship.pitch + ship.pitchV * dt));
+  ship.roll += (-ship.yawV * 0.45 - ship.roll) * (1 - Math.exp(-dt * 4));
+  const b = shipBasis();
+  const thrust = input.thr || (idle ? 0.4 : 0);
+  for (let i = 0; i < 3; i++) ship.vel[i] += b.fwd[i] * thrust * 0.9 * dt;
+  const damp = Math.exp(-(0.22 + input.brk * 2.5) * dt);
+  for (let i = 0; i < 3; i++) ship.vel[i] *= damp;
+  /* planet gravity acts on the center too — fight it or fall */
+  const near = nearestPlanets();
+  for (const pl of near) {
+    const dx = ship.pos[0] - pl.c[0], dy = ship.pos[1] - pl.c[1], dz = ship.pos[2] - pl.c[2];
+    const d = Math.sqrt(pl.d2) || 1e-4;
+    const acc = Math.min(pl.r * pl.r * 0.10 / pl.d2, 0.9);
+    ship.vel[0] -= dx / d * acc * dt;
+    ship.vel[1] -= dy / d * acc * dt;
+    ship.vel[2] -= dz / d * acc * dt;
+  }
+  ship.speed = Math.hypot(ship.vel[0], ship.vel[1], ship.vel[2]);
+  if (ship.speed > 1.3) {
+    const k = 1.3 / ship.speed;
+    for (let i = 0; i < 3; i++) ship.vel[i] *= k;
+    ship.speed = 1.3;
+  }
+  for (let i = 0; i < 3; i++) ship.pos[i] += ship.vel[i] * dt;
+  if (near[0].d2 < Math.pow(near[0].r + 0.015, 2)) respawn();
+  /* the cloud's heartbeat: replenish ink at the center */
+  if (launched) {
+    const p = PAL[paletteMode];
+    const amt = 2.6 * dt;
+    splat(ship.pos, [p[0] * amt, p[1] * amt, p[2] * amt, amt * 0.9], 0.024, dye);
+  }
+  Audio.engine(ship.speed, input.thr);
+  return { b, near };
+}
+function forcePass (dt, near) {
+  forceProg.bind();
+  gl.uniform1i(forceProg.u.uVel, vel.read.attach(0));
+  gl.uniform3f(forceProg.u.uPlayer,
+    ship.pos[0] - Math.floor(ship.pos[0]),
+    ship.pos[1] - Math.floor(ship.pos[1]),
+    ship.pos[2] - Math.floor(ship.pos[2]));
+  gl.uniform1f(forceProg.u.uBind, 26.0);
+  gl.uniform1f(forceProg.u.uBindR, 0.055);
+  gl.uniform1f(forceProg.u.uDt, dt);
+  const g = new Float32Array(16);
+  for (let i = 0; i < 4; i++) {
+    const pl = near[i];
+    g[i * 4]     = pl.c[0] - Math.floor(pl.c[0]);
+    g[i * 4 + 1] = pl.c[1] - Math.floor(pl.c[1]);
+    g[i * 4 + 2] = pl.c[2] - Math.floor(pl.c[2]);
+    g[i * 4 + 3] = pl.r * pl.r * 0.10;
+  }
+  gl.uniform4fv(forceProg.u['uGrav[0]'], g);
+  blit(vel.write);
+  vel.swap();
+}
+function camMatrix (dt, b) {
+  const tgt = [
+    ship.pos[0] - b.fwd[0] * 0.19 + b.up[0] * 0.06,
+    ship.pos[1] - b.fwd[1] * 0.19 + b.up[1] * 0.06,
+    ship.pos[2] - b.fwd[2] * 0.19 + b.up[2] * 0.06];
+  const f = 1 - Math.exp(-dt * 7);
+  for (let i = 0; i < 3; i++) camPos[i] += (tgt[i] - camPos[i]) * f;
+  const look = [
+    ship.pos[0] + b.fwd[0] * 0.26 - camPos[0],
+    ship.pos[1] + b.fwd[1] * 0.26 - camPos[1],
+    ship.pos[2] + b.fwd[2] * 0.26 - camPos[2]];
+  const fl = Math.hypot(look[0], look[1], look[2]) || 1;
+  const fv = [look[0] / fl, look[1] / fl, look[2] / fl];
+  const upHint = [b.up[0] * 0.55, 0.45 + b.up[1] * 0.55, b.up[2] * 0.55];
+  let r = [
+    fv[1] * upHint[2] - fv[2] * upHint[1],
+    fv[2] * upHint[0] - fv[0] * upHint[2],
+    fv[0] * upHint[1] - fv[1] * upHint[0]];
+  const rl = Math.hypot(r[0], r[1], r[2]) || 1;
+  r = [r[0] / rl, r[1] / rl, r[2] / rl];
+  const u = [
+    r[1] * fv[2] - r[2] * fv[1],
+    r[2] * fv[0] - r[0] * fv[2],
+    r[0] * fv[1] - r[1] * fv[0]];
+  return new Float32Array([r[0], r[1], r[2], u[0], u[1], u[2], -fv[0], -fv[1], -fv[2]]);
+}
+
+/* ---------------- render ---------------- */
+let resScale = 0.55;
+function resizeCanvas () {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(2, Math.floor(canvas.clientWidth * dpr * resScale));
+  const h = Math.max(2, Math.floor(canvas.clientHeight * dpr * resScale));
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+}
+resizeCanvas();
+function render (now, b, mat) {
+  renderProg.bind();
+  gl.uniform1i(renderProg.u.uDye, dye.read.attach(0));
+  gl.uniform2f(renderProg.u.uRes, canvas.width, canvas.height);
+  gl.uniform3f(renderProg.u.uPos, camPos[0], camPos[1], camPos[2]);
+  gl.uniformMatrix3fv(renderProg.u.uCam, false, mat);
+  gl.uniform1f(renderProg.u.uTime, now / 1000);
+  gl.uniform4fv(renderProg.u['uSph[0]'], sphFlat);
+  gl.uniform3fv(renderProg.u['uSphCol[0]'], sphColFlat);
+  gl.uniform3f(renderProg.u.uShip, ship.pos[0], ship.pos[1], ship.pos[2]);
+  gl.uniform1f(renderProg.u.uThrust, input.thr * (0.6 + 0.4 * Math.sin(now / 60)) + ship.speed * 0.25);
+  const p = PAL[paletteMode];
+  gl.uniform3f(renderProg.u.uShipCol, p[0], p[1], p[2]);
+  blit(null);
+}
+/* ---------------- controls ---------------- */
+function bindPad (id, key) {
+  const el = document.getElementById(id);
+  el.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    el.setPointerCapture(e.pointerId);
+    input[key] = 1;
+    el.classList.add('on');
+    lastInteraction = performance.now();
+    Audio.resume();
+    if (key === 'thr') Audio.swell(1);
+    if (key === 'brk') Audio.swell(-1);
+  });
+  const off = () => { input[key] = 0; el.classList.remove('on'); };
+  el.addEventListener('pointerup', off);
+  el.addEventListener('pointercancel', off);
+}
+bindPad('b-up', 'up'); bindPad('b-down', 'down');
+bindPad('b-left', 'left'); bindPad('b-right', 'right');
+bindPad('b-thr', 'thr'); bindPad('b-brk', 'brk');
+
+const KEYMAP = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
+                 w: 'thr', W: 'thr', s: 'brk', S: 'brk' };
+window.addEventListener('keydown', e => {
+  const k = KEYMAP[e.key];
+  if (!k) return;
+  e.preventDefault();
+  if (!input[k]) {
+    if (k === 'thr') Audio.swell(1);
+    if (k === 'brk') Audio.swell(-1);
+  }
+  input[k] = 1;
+  lastInteraction = performance.now();
+  document.getElementById('b-' + (k === 'up' ? 'up' : k === 'down' ? 'down' : k === 'left' ? 'left' : k === 'right' ? 'right' : k)).classList.add('on');
+});
+window.addEventListener('keyup', e => {
+  const k = KEYMAP[e.key];
+  if (!k) return;
+  input[k] = 0;
+  document.getElementById('b-' + k).classList.remove('on');
+});
+
+/* drag to look + double-tap pulse on the free canvas */
+let drag = null, lastTap = { t: 0, x: 0, y: 0 };
+window.addEventListener('pointerdown', e => {
+  if (e.target.closest && e.target.closest('#ui, #about, .pad')) return;
+  if (!launched) { launch(); return; }
+  lastInteraction = performance.now();
+  Audio.resume();
+  drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
+  const now = performance.now();
+  if (now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 48) {
+    pulse();
+    lastTap.t = 0;
+  } else lastTap = { t: now, x: e.clientX, y: e.clientY };
+});
+window.addEventListener('pointermove', e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  lastInteraction = performance.now();
+  ship.yaw += (e.clientX - drag.x) * 0.004;
+  ship.pitch = Math.max(-1.35, Math.min(1.35, ship.pitch + (e.clientY - drag.y) * 0.004));
+  drag.x = e.clientX; drag.y = e.clientY;
+});
+const endDrag = e => { if (drag && e.pointerId === drag.id) drag = null; };
+window.addEventListener('pointerup', endDrag);
+window.addEventListener('pointercancel', endDrag);
+
+function pulse () {
+  const c = wakeColor();
+  splat(ship.pos, [0, 0, 0, 0], 0.001, vel); // touch the pipeline even at rest
+  for (let i = 0; i < 8; i++) {
+    const th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1);
+    const d = [Math.sin(ph) * Math.cos(th), Math.sin(ph) * Math.sin(th), Math.cos(ph)];
+    splat(ship.pos, [d[0] * 0.9, d[1] * 0.9, d[2] * 0.9, 0], 0.05, vel);
+  }
+  splat(ship.pos, [c[0] * 0.9, c[1] * 0.9, c[2] * 0.9, 0.8], 0.05, dye);
+  Audio.boom();
+  if (navigator.vibrate) navigator.vibrate([16, 28, 12]);
+}
+function launch () {
+  launched = true;
+  Audio.init();
+  seedPlayer();
+  lastInteraction = performance.now();
+  document.getElementById('veil').style.opacity = '0';
+  document.getElementById('hint').style.opacity = '0';
+  document.getElementById('brand').style.opacity = '1';
+  document.getElementById('ui').classList.add('show');
+  document.getElementById('ctl').classList.add('show');
+  setTimeout(() => { const v = document.getElementById('veil'); if (v) v.remove();
+                     const h = document.getElementById('hint'); if (h) h.remove(); }, 2200);
+  pulse();
+}
+
+/* ---------------- audio ---------------- */
+const Audio = (() => {
+  let ctx = null, bus = null, muted = false, droneGain = null, unlockHooked = false;
+  let engGain = null, engFilter = null, bellTimer = 0;
+  function unlock () {
+    if (!ctx || ctx.state === 'running') return;
+    ctx.resume().catch(() => {});
+    try {
+      const s = ctx.createBufferSource();
+      s.buffer = ctx.createBuffer(1, 1, 22050);
+      s.connect(ctx.destination); s.start(0);
+    } catch (e) {}
+  }
+  function hookUnlock () {
+    if (unlockHooked) return; unlockHooked = true;
+    const kick = () => unlock();
+    ['pointerdown','pointerup','touchend','click'].forEach(ev => window.addEventListener(ev, kick, true));
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) unlock(); });
+  }
+  function init () {
+    if (ctx) return;
+    try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+    /* the keepalive exists ONLY for the iPad/iPhone mute switch — un-gated it
+       crackles on Android (see flux 500ce55) */
+    const isApple = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (isApple) try {
+      if (navigator.audioSession) navigator.audioSession.type = 'playback';
+      const sr = 8000, n = sr, wav = new Uint8Array(44 + n);
+      const dv = new DataView(wav.buffer);
+      const wstr = (o, s) => { for (let i = 0; i < s.length; i++) wav[o + i] = s.charCodeAt(i); };
+      wstr(0, 'RIFF'); dv.setUint32(4, 36 + n, true); wstr(8, 'WAVEfmt ');
+      dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+      dv.setUint32(24, sr, true); dv.setUint32(28, sr, true); dv.setUint16(32, 1, true); dv.setUint16(34, 8, true);
+      wstr(36, 'data'); dv.setUint32(40, n, true);
+      wav.fill(128, 44);
+      const el = document.createElement('audio');
+      el.loop = true; el.setAttribute('playsinline', ''); el.preload = 'auto';
+      el.src = URL.createObjectURL(new Blob([wav], { type: 'audio/wav' }));
+      const pp = el.play();
+      if (pp && pp.catch) pp.catch(() => {});
+      window.__audioSessionKeepalive = el;
+    } catch (e) {}
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -20; comp.ratio.value = 5;
+    comp.connect(ctx.destination);
+    bus = ctx.createGain(); bus.gain.value = 0.9; bus.connect(comp);
+    const len = ctx.sampleRate * 3.2;
+    const ir = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = ir.getChannelData(ch);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.0);
+    }
+    const conv = ctx.createConvolver(); conv.buffer = ir;
+    const wet = ctx.createGain(); wet.gain.value = 0.5;
+    conv.connect(wet); wet.connect(comp);
+    bus.connect(conv);
+    /* deep space drone (activity-gated) */
+    droneGain = ctx.createGain(); droneGain.gain.value = 0;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 200;
+    droneGain.connect(lp); lp.connect(bus);
+    [41.2, 61.7, 82.4].forEach((f, i) => {
+      const o = ctx.createOscillator(); o.type = i === 2 ? 'triangle' : 'sine'; o.frequency.value = f;
+      const g = ctx.createGain(); g.gain.value = i === 2 ? 0.10 : 0.28;
+      o.connect(g); g.connect(droneGain); o.start();
+    });
+    /* engine: noise through a bandpass, follows speed */
+    const wlen = ctx.sampleRate * 2;
+    const wb = ctx.createBuffer(1, wlen, ctx.sampleRate);
+    const wd = wb.getChannelData(0);
+    for (let i = 0; i < wlen; i++) wd[i] = Math.random() * 2 - 1;
+    const wsrc = ctx.createBufferSource(); wsrc.buffer = wb; wsrc.loop = true;
+    engFilter = ctx.createBiquadFilter(); engFilter.type = 'bandpass'; engFilter.frequency.value = 120; engFilter.Q.value = 1.4;
+    engGain = ctx.createGain(); engGain.gain.value = 0;
+    const sub = ctx.createOscillator(); sub.type = 'sine'; sub.frequency.value = 55;
+    const subG = ctx.createGain(); subG.gain.value = 0.25;
+    sub.connect(subG); subG.connect(engGain); sub.start();
+    wsrc.connect(engFilter); engFilter.connect(engGain); engGain.connect(bus); wsrc.start();
+    hookUnlock();
+    unlock();
+    scheduleBell();
+  }
+  function scheduleBell () {
+    clearTimeout(bellTimer);
+    bellTimer = setTimeout(() => {
+      if (ctx && ctx.state === 'running' && !muted) {
+        const NOTES = [164.8, 196.0, 220.0, 261.6, 293.7];
+        bell(NOTES[(Math.random() * NOTES.length) | 0], 0.10 + Math.random() * 0.08);
+      }
+      scheduleBell();
+    }, 5000 + Math.random() * 6000);
+  }
+  function bell (freq, vol) {
+    if (!ctx || muted || ctx.state !== 'running') return;
+    const t = ctx.currentTime;
+    [1, 2.76, 5.4].forEach((partial, i) => {
+      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = freq * partial;
+      const g = ctx.createGain();
+      const v = vol / Math.pow(2.2, i);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(v, t + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 2.2 - i * 0.4);
+      o.connect(g); g.connect(bus);
+      o.start(t); o.stop(t + 2.4);
+    });
+  }
+  function engine (speed, thrusting) {
+    if (!ctx || muted || !engGain) return;
+    const t = ctx.currentTime;
+    engGain.gain.setTargetAtTime(Math.min(0.4, speed * 0.34 + thrusting * 0.06), t, 0.18);
+    engFilter.frequency.setTargetAtTime(90 + speed * 480 + thrusting * 120, t, 0.2);
+  }
+  function swell (dir) {
+    if (!ctx || muted || ctx.state !== 'running') return;
+    const t = ctx.currentTime;
+    const len = ctx.sampleRate * 0.7;
+    const b = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = b.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(i / len, dir > 0 ? 0.6 : 0.2) * (1 - i / len);
+    const s = ctx.createBufferSource(); s.buffer = b;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.0;
+    bp.frequency.setValueAtTime(dir > 0 ? 240 : 1600, t);
+    bp.frequency.exponentialRampToValueAtTime(dir > 0 ? 1600 : 240, t + 0.6);
+    const g = ctx.createGain(); g.gain.value = 0.18;
+    s.connect(bp); bp.connect(g); g.connect(bus);
+    s.start(t);
+  }
+  function boom () {
+    if (!ctx || muted || ctx.state !== 'running') return;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(110, t);
+    o.frequency.exponentialRampToValueAtTime(24, t + 0.7);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.5, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+    o.connect(g); g.connect(bus);
+    o.start(t); o.stop(t + 1);
+  }
+  function drone (active) {
+    if (!ctx || !droneGain) return;
+    const target = (muted || !active) ? 0 : 0.13;
+    droneGain.gain.setTargetAtTime(target, ctx.currentTime, 1.2);
+  }
+  function resume () { unlock(); }
+  function toggle () {
+    muted = !muted;
+    if (ctx) {
+      const t = ctx.currentTime;
+      if (droneGain) droneGain.gain.setTargetAtTime(0, t, 0.2);
+      if (engGain && muted) engGain.gain.setTargetAtTime(0, t, 0.1);
+    }
+    return muted;
+  }
+  return { init, resume, engine, swell, boom, bell, drone, toggle };
+})();
+
+/* ---------------- UI ---------------- */
+document.querySelectorAll('.pal').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.pal').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    paletteMode = btn.dataset.p;
+    toast(paletteMode);
+    pulse();
+  });
+});
+document.getElementById('snd').addEventListener('click', function () {
+  const muted = Audio.toggle();
+  this.classList.toggle('off', muted);
+  document.getElementById('sndwave').style.display = muted ? 'none' : '';
+  toast(muted ? 'sound off' : 'sound on');
+});
+document.getElementById('info').addEventListener('click', () => {
+  document.getElementById('about').classList.add('open');
+});
+document.getElementById('ab-close').addEventListener('click', () => {
+  document.getElementById('about').classList.remove('open');
+});
+let toastTimer = 0;
+function toast (msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.opacity = '1';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.style.opacity = '0'; }, 1200);
+}
+let wantCapture = false;
+document.getElementById('cam').addEventListener('click', () => { wantCapture = true; toast('capturing…'); });
+function capture () {
+  wantCapture = false;
+  const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+  const pixels = new Uint8Array(w * h * 4);
+  gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const c2 = cv.getContext('2d');
+  const imgData = c2.createImageData(w, h);
+  const row = w * 4;
+  for (let y = 0; y < h; y++)
+    imgData.data.set(pixels.subarray(y * row, y * row + row), (h - y - 1) * row);
+  c2.putImageData(imgData, 0, 0);
+  cv.toBlob(blob => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'nebula-' + Math.round(performance.now()) + '.png';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast('saved ✓');
+  }, 'image/png');
+}
+
+/* ---------------- main loop ---------------- */
+let lastTime = performance.now();
+let frameEMA = 16, lastResAdjust = 0, speedTimer = 0;
+function tick (now) {
+  let dt = (now - lastTime) / 1000;
+  lastTime = now;
+  dt = Math.min(dt, 1 / 20);
+  frameEMA += (dt * 1000 - frameEMA) * 0.05;
+  if (now - lastResAdjust > 1500) {
+    if (frameEMA > 30 && resScale > 0.34) { resScale *= 0.85; lastResAdjust = now; }
+    else if (frameEMA < 14 && resScale < 0.8) { resScale *= 1.07; lastResAdjust = now; }
+  }
+  resizeCanvas();
+  const { b, near } = updateShip(dt, now);
+  forcePass(dt, near);
+  step(dt);
+  Audio.drone(launched && now - lastInteraction < 10000);
+  const mat = camMatrix(dt, b);
+  render(now, b, mat);
+  if (now - speedTimer > 120) {
+    speedTimer = now;
+    document.getElementById('speed').textContent = 'v ' + ship.speed.toFixed(2);
+  }
+  if (wantCapture) capture();
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
