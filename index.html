@@ -127,6 +127,35 @@
 
 const canvas = document.getElementById('c');
 const hiddenMessageText = getHiddenMessageText();
+const hiddenMessageTypographyPresets = {
+  hand: {
+    key: 'hand',
+    font: size => 'italic 400 ' + size + 'px Z003, "URW Chancery L", "Apple Chancery", "Segoe Script", "Snell Roundhand", "Bradley Hand", cursive',
+    strokeScale: 0,
+    fillStyle: 'rgba(255,255,255,0.96)',
+    ampScale: 0.022,
+    ampMax: 5.2,
+    spreadScale: 0.012,
+    spreadMax: 2.8,
+    warpBody: 0.16,
+    auraBase: 0.12,
+    auraRipple: 0.045
+  },
+  sans: {
+    key: 'sans',
+    font: size => '800 ' + size + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif',
+    strokeScale: 0.012,
+    fillStyle: 'rgba(255,255,255,1)',
+    ampScale: 0.034,
+    ampMax: 7.2,
+    spreadScale: 0.019,
+    spreadMax: 4.2,
+    warpBody: 0.24,
+    auraBase: 0.18,
+    auraRipple: 0.07
+  }
+};
+const hiddenMessageTypography = getHiddenMessageTypography();
 const config = {
   SIM_RES: 128,
   DYE_RES: Math.min(window.innerWidth, window.innerHeight) < 760 ? 512 : 1024,
@@ -149,6 +178,17 @@ function getHiddenMessageText () {
     return raw.replace(/\s+/g, ' ').trim().slice(0, 96);
   } catch (e) {
     return '';
+  }
+}
+
+function getHiddenMessageTypography () {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const raw = (params.get('msgStyle') || params.get('messageStyle') || params.get('typography') || 'hand').toLowerCase();
+    const aliases = { hand:'hand', handwriting:'hand', cursive:'hand', script:'hand', sans:'sans', clean:'sans' };
+    return hiddenMessageTypographyPresets[aliases[raw] || 'hand'];
+  } catch (e) {
+    return hiddenMessageTypographyPresets.hand;
   }
 }
 
@@ -677,7 +717,7 @@ const HiddenMessage = (() => {
   }
 
   function maskFont (size) {
-    return '800 ' + size + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif';
+    return hiddenMessageTypography.font(size);
   }
 
   function clamp01 (value) {
@@ -704,15 +744,17 @@ const HiddenMessage = (() => {
     sourceCtx.lineJoin = 'round';
     sourceCtx.lineCap = 'round';
     const x = width * 0.5;
-    const stroke = Math.max(1, best.size * 0.012);
+    const stroke = best.size * hiddenMessageTypography.strokeScale;
 
     for (let i = 0; i < best.lines.length; i++) {
       const y = top + i * lineHeight;
       sourceCtx.shadowBlur = 0;
-      sourceCtx.lineWidth = stroke;
-      sourceCtx.strokeStyle = 'rgba(255,255,255,0.28)';
-      sourceCtx.fillStyle = 'rgba(255,255,255,1)';
-      sourceCtx.strokeText(best.lines[i], x, y);
+      if (stroke > 0) {
+        sourceCtx.lineWidth = Math.max(1, stroke);
+        sourceCtx.strokeStyle = 'rgba(255,255,255,0.28)';
+        sourceCtx.strokeText(best.lines[i], x, y);
+      }
+      sourceCtx.fillStyle = hiddenMessageTypography.fillStyle;
       sourceCtx.fillText(best.lines[i], x, y);
     }
     sourceCtx.restore();
@@ -741,8 +783,8 @@ const HiddenMessage = (() => {
     const src = sourceCtx.getImageData(0, 0, width, height).data;
     const out = maskCtx.createImageData(width, height);
     const dst = out.data;
-    const amp = Math.max(1.6, Math.min(7.2, size * 0.034));
-    const spread = Math.max(1.1, Math.min(4.2, size * 0.019));
+    const amp = Math.max(1.2, Math.min(hiddenMessageTypography.ampMax, size * hiddenMessageTypography.ampScale));
+    const spread = Math.max(0.8, Math.min(hiddenMessageTypography.spreadMax, size * hiddenMessageTypography.spreadScale));
     const phase = (seed % 8192) * 0.0131;
 
     for (let y = 0; y < height; y++) {
@@ -773,8 +815,10 @@ const HiddenMessage = (() => {
 
         const base = sampleAlpha(src, x, y);
         const body = smooth(0.09, 0.72, base);
-        const warpedBody = smooth(0.28, 0.92, core) * 0.24 * (1 - body);
-        const aura = smooth(0.018, 0.36, dilated) * (0.18 + ripple * 0.07) * (1 - body);
+        const warpedBody = smooth(0.28, 0.92, core) * hiddenMessageTypography.warpBody * (1 - body);
+        const aura = smooth(0.018, 0.36, dilated)
+                   * (hiddenMessageTypography.auraBase + ripple * hiddenMessageTypography.auraRipple)
+                   * (1 - body);
         const aperture = apertureGuard(src, x, y, base, size);
         const fluid = Math.max(warpedBody, aura) * (1 - aperture * 0.94);
         const alpha = clamp01(Math.max(body, fluid));
