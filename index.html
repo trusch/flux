@@ -616,8 +616,11 @@ const HiddenMessage = (() => {
 
   const maskCanvas = document.createElement('canvas');
   const maskCtx = maskCanvas.getContext('2d');
+  const sourceCanvas = document.createElement('canvas');
+  const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
   const texture = gl.createTexture();
   let width = 0, height = 0;
+  const seed = hashString(hiddenMessageText);
 
   gl.bindTexture(gl.TEXTURE_2D, texture);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -664,6 +667,125 @@ const HiddenMessage = (() => {
     return lines.length ? lines : [''];
   }
 
+  function hashString (value) {
+    let h = 2166136261;
+    for (let i = 0; i < value.length; i++) {
+      h ^= value.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+
+  function maskFont (size) {
+    return '900 ' + size + 'px ui-rounded, "SF Pro Rounded", "Avenir Next Rounded", "Arial Rounded MT Bold", -apple-system, "Segoe UI", Helvetica, sans-serif';
+  }
+
+  function clamp01 (value) {
+    return Math.max(0, Math.min(1, value));
+  }
+
+  function smooth (edge0, edge1, value) {
+    const t = clamp01((value - edge0) / (edge1 - edge0));
+    return t * t * (3 - 2 * t);
+  }
+
+  function sampleAlpha (data, x, y) {
+    x = Math.max(0, Math.min(width - 1, x | 0));
+    y = Math.max(0, Math.min(height - 1, y | 0));
+    return data[(y * width + x) * 4 + 3] / 255;
+  }
+
+  function drawTextSource (best, top, lineHeight) {
+    sourceCtx.clearRect(0, 0, width, height);
+    sourceCtx.save();
+    sourceCtx.font = maskFont(best.size);
+    sourceCtx.textAlign = 'center';
+    sourceCtx.textBaseline = 'middle';
+    sourceCtx.lineJoin = 'round';
+    sourceCtx.lineCap = 'round';
+    const x = width * 0.5;
+    const stroke = Math.max(3, best.size * 0.085);
+    const bloom = Math.max(5, best.size * 0.15);
+
+    for (let i = 0; i < best.lines.length; i++) {
+      const y = top + i * lineHeight;
+      sourceCtx.shadowColor = 'rgba(255,255,255,0.74)';
+      sourceCtx.shadowBlur = bloom;
+      sourceCtx.lineWidth = stroke * 1.55;
+      sourceCtx.strokeStyle = 'rgba(255,255,255,0.62)';
+      sourceCtx.strokeText(best.lines[i], x, y);
+
+      sourceCtx.shadowBlur = 0;
+      sourceCtx.lineWidth = stroke * 0.55;
+      sourceCtx.strokeStyle = 'rgba(255,255,255,0.18)';
+      sourceCtx.fillStyle = 'rgba(255,255,255,0.22)';
+      for (let pass = 0; pass < 16; pass++) {
+        const a = seed * 0.00021 + i * 1.37 + pass * 2.399963;
+        const r = (0.25 + (pass % 5) * 0.18) * stroke;
+        const ox = Math.cos(a) * r + Math.sin(a * 0.63) * stroke * 0.24;
+        const oy = Math.sin(a * 1.17) * r * 0.72 + Math.cos(a * 0.41) * stroke * 0.2;
+        sourceCtx.strokeText(best.lines[i], x + ox, y + oy);
+        if (pass % 3 === 0) sourceCtx.fillText(best.lines[i], x + ox * 0.55, y + oy * 0.55);
+      }
+
+      sourceCtx.fillStyle = 'rgba(255,255,255,0.96)';
+      sourceCtx.strokeStyle = 'rgba(255,255,255,0.84)';
+      sourceCtx.lineWidth = stroke * 0.72;
+      sourceCtx.strokeText(best.lines[i], x, y);
+      sourceCtx.fillText(best.lines[i], x, y);
+    }
+    sourceCtx.restore();
+  }
+
+  function fluidizeSource (size) {
+    const src = sourceCtx.getImageData(0, 0, width, height).data;
+    const out = maskCtx.createImageData(width, height);
+    const dst = out.data;
+    const amp = Math.max(2.2, Math.min(11, size * 0.058));
+    const spread = Math.max(1.4, Math.min(7, size * 0.033));
+    const phase = (seed % 8192) * 0.0131;
+
+    for (let y = 0; y < height; y++) {
+      const yy = y + phase * 7.1;
+      for (let x = 0; x < width; x++) {
+        const xx = x - phase * 5.3;
+        const curlX = Math.sin(yy * 0.028 + phase)
+                    + Math.sin((xx + yy) * 0.013 - phase * 1.7) * 0.58
+                    + Math.sin((xx - yy) * 0.041 + phase * 0.47) * 0.24;
+        const curlY = Math.cos(xx * 0.026 - phase * 0.91)
+                    + Math.sin((xx * 0.017 - yy * 0.023) + phase * 1.31) * 0.52
+                    + Math.cos((xx + yy) * 0.037 - phase * 0.39) * 0.22;
+        const sx = x + curlX * amp;
+        const sy = y + curlY * amp * 0.72;
+        const ripple = 0.5 + 0.5 * Math.sin((x * 0.071 + y * 0.053) + phase * 2.4)
+                             * Math.sin((x * 0.019 - y * 0.031) - phase * 1.6);
+        const reach = spread * (0.78 + ripple * 0.42);
+        const core = sampleAlpha(src, sx, sy);
+        let dilated = core;
+        dilated = Math.max(dilated, sampleAlpha(src, sx + reach, sy));
+        dilated = Math.max(dilated, sampleAlpha(src, sx - reach, sy));
+        dilated = Math.max(dilated, sampleAlpha(src, sx, sy + reach));
+        dilated = Math.max(dilated, sampleAlpha(src, sx, sy - reach));
+        dilated = Math.max(dilated, sampleAlpha(src, sx + reach * 0.7, sy + reach * 0.7));
+        dilated = Math.max(dilated, sampleAlpha(src, sx - reach * 0.7, sy + reach * 0.7));
+        dilated = Math.max(dilated, sampleAlpha(src, sx + reach * 0.7, sy - reach * 0.7));
+        dilated = Math.max(dilated, sampleAlpha(src, sx - reach * 0.7, sy - reach * 0.7));
+
+        const threshold = 0.055 + ripple * 0.055;
+        const body = smooth(threshold, 0.76, dilated);
+        const solid = smooth(0.40, 0.90, core);
+        const edge = smooth(0.010, 0.27, dilated) * (1 - solid);
+        const alpha = clamp01(Math.max(body * 0.88, solid, edge * 0.50));
+        const idx = (y * width + x) * 4;
+        dst[idx] = 255;
+        dst[idx + 1] = 255;
+        dst[idx + 2] = 255;
+        dst[idx + 3] = Math.round(alpha * 255);
+      }
+    }
+    maskCtx.putImageData(out, 0, 0);
+  }
+
   function drawMask () {
     maskCtx.clearRect(0, 0, width, height);
     const maxWidth = width * 0.86;
@@ -672,7 +794,7 @@ const HiddenMessage = (() => {
     const minSize = 22;
     let best = { size: minSize, lines: [hiddenMessageText] };
     for (let size = maxSize; size >= minSize; size -= 2) {
-      maskCtx.font = '900 ' + size + 'px -apple-system, "Segoe UI", Helvetica, sans-serif';
+      maskCtx.font = maskFont(size);
       const lines = wrapLines(maskCtx, hiddenMessageText, maxWidth);
       if (lines.length * size * 1.1 <= maxHeight) {
         best = { size, lines };
@@ -683,14 +805,8 @@ const HiddenMessage = (() => {
 
     const lineHeight = best.size * 1.1;
     const top = height * 0.5 - ((best.lines.length - 1) * lineHeight) * 0.5;
-    maskCtx.font = '900 ' + best.size + 'px -apple-system, "Segoe UI", Helvetica, sans-serif';
-    maskCtx.textAlign = 'center';
-    maskCtx.textBaseline = 'middle';
-    maskCtx.fillStyle = 'rgba(255,255,255,0.98)';
-    maskCtx.shadowColor = 'rgba(255,255,255,0.84)';
-    maskCtx.shadowBlur = Math.max(5, best.size * 0.16);
-    for (let i = 0; i < best.lines.length; i++)
-      maskCtx.fillText(best.lines[i], width * 0.5, top + i * lineHeight);
+    drawTextSource(best, top, lineHeight);
+    fluidizeSource(best.size);
   }
 
   function upload () {
@@ -707,6 +823,8 @@ const HiddenMessage = (() => {
     height = next.height;
     maskCanvas.width = width;
     maskCanvas.height = height;
+    sourceCanvas.width = width;
+    sourceCanvas.height = height;
     drawMask();
     upload();
   }
