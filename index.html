@@ -422,16 +422,17 @@ const messageVelocityShader = `
     float B = texture2D(uMask, vUv - vec2(0.0, maskTexelSize.y)).a;
     float C = texture2D(uMask, vUv).a;
     vec2 grad = vec2(R - L, T - B);
-    float edge = clamp(length(grad) * 9.0, 0.0, 1.0);
-    float mask = smoothstep(0.012, 0.72, C);
-    float ink = smoothstep(0.006, 0.16, length(dye));
+    float edge = clamp(length(grad) * 8.6, 0.0, 1.0);
+    float mask = smoothstep(0.028, 0.76, C);
+    float ink = smoothstep(0.014, 0.17, length(dye));
+    float motion = smoothstep(3.0, 75.0, length(velocity));
     vec2 tangent = normalize(vec2(-grad.y, grad.x) + vec2(0.001, 0.001));
     float wave = sin((vUv.x * 43.0 + vUv.y * 31.0 + time * 0.9) * 6.2831853);
     vec2 shear = vec2(sin(vUv.y * 53.0 + time * 1.7), cos(vUv.x * 47.0 - time * 1.3));
-    vec2 force = tangent * edge * (1.15 + 0.35 * wave);
-    force += grad * (mask * 0.62 + edge * 0.28);
-    force += shear * mask * 0.18;
-    velocity += force * strength * dt * (0.22 + 0.78 * ink);
+    vec2 force = tangent * edge * (0.78 + 0.20 * wave);
+    force += grad * (edge * 0.22 + mask * 0.10);
+    force += shear * edge * 0.06;
+    velocity += force * strength * dt * ink * (0.28 + 0.72 * motion);
     velocity = min(max(velocity, -1000.0), 1000.0);
     gl_FragColor = vec4(velocity, 0.0, 1.0);
   }`;
@@ -444,45 +445,44 @@ const messageDyeShader = `
   void main () {
     vec3 dye = texture2D(uDye, vUv).rgb;
     vec2 reach = maskTexelSize * 18.0;
-    vec2 farReach = maskTexelSize * 44.0;
     vec3 nearDye = dye;
     nearDye = max(nearDye, texture2D(uDye, vUv + vec2(reach.x, 0.0)).rgb);
     nearDye = max(nearDye, texture2D(uDye, vUv - vec2(reach.x, 0.0)).rgb);
     nearDye = max(nearDye, texture2D(uDye, vUv + vec2(0.0, reach.y)).rgb);
     nearDye = max(nearDye, texture2D(uDye, vUv - vec2(0.0, reach.y)).rgb);
-    nearDye = max(nearDye, texture2D(uDye, vUv + vec2(farReach.x, farReach.y)).rgb);
-    nearDye = max(nearDye, texture2D(uDye, vUv + vec2(-farReach.x, farReach.y)).rgb);
-    nearDye = max(nearDye, texture2D(uDye, vUv + vec2(farReach.x, -farReach.y)).rgb);
-    nearDye = max(nearDye, texture2D(uDye, vUv - vec2(farReach.x, farReach.y)).rgb);
+    nearDye = max(nearDye, texture2D(uDye, vUv + vec2(reach.x, reach.y) * 0.72).rgb);
+    nearDye = max(nearDye, texture2D(uDye, vUv + vec2(-reach.x, reach.y) * 0.72).rgb);
+    nearDye = max(nearDye, texture2D(uDye, vUv + vec2(reach.x, -reach.y) * 0.72).rgb);
+    nearDye = max(nearDye, texture2D(uDye, vUv - vec2(reach.x, reach.y) * 0.72).rgb);
     float L = texture2D(uMask, vUv - vec2(maskTexelSize.x, 0.0)).a;
     float R = texture2D(uMask, vUv + vec2(maskTexelSize.x, 0.0)).a;
     float T = texture2D(uMask, vUv + vec2(0.0, maskTexelSize.y)).a;
     float B = texture2D(uMask, vUv - vec2(0.0, maskTexelSize.y)).a;
     float C = texture2D(uMask, vUv).a;
     vec2 grad = vec2(R - L, T - B);
-    float edge = clamp(length(grad) * 9.5, 0.0, 1.0);
-    float core = smoothstep(0.20, 0.74, C);
-    float aura = smoothstep(0.004, 0.22, C);
+    float edge = clamp(length(grad) * 9.2, 0.0, 1.0);
+    float core = smoothstep(0.24, 0.78, C);
+    float aura = smoothstep(0.008, 0.24, C);
     float halo = clamp(aura - core, 0.0, 1.0);
-    float ink = smoothstep(0.008, 0.17, length(nearDye));
+    float ink = smoothstep(0.010, 0.18, length(nearDye));
     vec2 velocity = texture2D(uVelocity, vUv).xy;
-    float motion = smoothstep(0.8, 70.0, length(velocity));
-    float gate = ink * (0.34 + 0.66 * motion);
-    float pulse = 0.82 + 0.18 * sin(time * 2.6 + (vUv.x + vUv.y) * 42.0);
+    float motion = smoothstep(2.0, 72.0, length(velocity));
+    float pulse = 0.84 + 0.16 * sin(time * 2.6 + (vUv.x + vUv.y) * 42.0);
     vec3 prism = 0.25 + 0.75 * (0.5 + 0.5 * cos(6.2831853 * (vec3(0.02, 0.36, 0.69) + time * 0.035 + vUv.x * 0.13 - vUv.y * 0.09)));
     float energy = max(max(nearDye.r, nearDye.g), nearDye.b);
-    vec3 lifted = max(nearDye * (1.18 + 0.92 * edge), prism * energy * (0.52 + 0.82 * edge));
-    float trench = clamp(dt * strength * gate * pulse * (core * 0.82 + halo * 0.54) * (0.58 + 0.42 * motion), 0.0, 0.42);
-    dye *= 1.0 - trench;
-    float reveal = clamp(edge * 1.85 + halo * 0.38, 0.0, 1.95);
-    float lift = clamp(dt * strength * gate * pulse * reveal, 0.0, 0.42);
-    dye = mix(dye, lifted, lift);
+    vec3 lifted = max(nearDye * (1.04 + 0.52 * edge), prism * energy * (0.36 + 0.62 * edge));
     vec2 flow = normalize(velocity + vec2(0.001, 0.001));
     vec2 normal = normalize(grad + vec2(0.001, 0.001));
     float crossing = abs(dot(flow, normal));
-    dye += prism * (0.17 * lift * (0.35 + 0.65 * edge));
-    dye += prism.gbr * (0.085 * lift * crossing * edge);
-    gl_FragColor = vec4(min(dye, vec3(4.0)), 1.0);
+    float release = clamp(dt * strength * (core * 0.56 + halo * 0.22) * (0.22 + 0.78 * (1.0 - motion)), 0.0, 0.22);
+    dye *= 1.0 - release;
+    float gate = ink * (0.24 + 0.76 * motion);
+    float reveal = clamp(edge * (1.32 + 0.42 * crossing) + halo * 0.22, 0.0, 1.72);
+    float lift = clamp(dt * strength * gate * pulse * reveal, 0.0, 0.28);
+    dye = mix(dye, lifted, lift);
+    dye += prism * (0.095 * lift * (0.25 + 0.75 * edge));
+    dye += prism.gbr * (0.045 * lift * crossing * edge);
+    gl_FragColor = vec4(min(dye, vec3(3.6)), 1.0);
   }`;
 /* ---------------- program plumbing ---------------- */
 function compileShader (type, source, keywords) {
@@ -884,7 +884,8 @@ const HiddenMessage = (() => {
   function activity (now) {
     if (!ignited) return 0;
     if (pointers.size) return 1;
-    return Math.max(0, 1 - (now - lastInteraction) / 9500) * 0.85;
+    const tail = Math.max(0, 1 - (now - lastInteraction) / 1800);
+    return tail * tail * 0.48;
   }
 
   function applyVelocity (dt, now) {
@@ -898,7 +899,7 @@ const HiddenMessage = (() => {
     gl.uniform2f(messageVelocityProgram.uniforms.maskTexelSize, 1 / width, 1 / height);
     gl.uniform1f(messageVelocityProgram.uniforms.dt, dt);
     gl.uniform1f(messageVelocityProgram.uniforms.time, now / 1000);
-    gl.uniform1f(messageVelocityProgram.uniforms.strength, 520 * amount);
+    gl.uniform1f(messageVelocityProgram.uniforms.strength, 320 * amount);
     blit(velocity.write);
     velocity.swap();
   }
@@ -914,7 +915,7 @@ const HiddenMessage = (() => {
     gl.uniform2f(messageDyeProgram.uniforms.maskTexelSize, 1 / width, 1 / height);
     gl.uniform1f(messageDyeProgram.uniforms.dt, dt);
     gl.uniform1f(messageDyeProgram.uniforms.time, now / 1000);
-    gl.uniform1f(messageDyeProgram.uniforms.strength, 9.5 * amount);
+    gl.uniform1f(messageDyeProgram.uniforms.strength, 7.2 * amount);
     blit(dye.write);
     dye.swap();
   }
