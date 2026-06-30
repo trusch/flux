@@ -677,7 +677,7 @@ const HiddenMessage = (() => {
   }
 
   function maskFont (size) {
-    return '900 ' + size + 'px ui-rounded, "SF Pro Rounded", "Avenir Next Rounded", "Arial Rounded MT Bold", -apple-system, "Segoe UI", Helvetica, sans-serif';
+    return '800 ' + size + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif';
   }
 
   function clamp01 (value) {
@@ -704,45 +704,45 @@ const HiddenMessage = (() => {
     sourceCtx.lineJoin = 'round';
     sourceCtx.lineCap = 'round';
     const x = width * 0.5;
-    const stroke = Math.max(3, best.size * 0.085);
-    const bloom = Math.max(5, best.size * 0.15);
+    const stroke = Math.max(1, best.size * 0.012);
 
     for (let i = 0; i < best.lines.length; i++) {
       const y = top + i * lineHeight;
-      sourceCtx.shadowColor = 'rgba(255,255,255,0.74)';
-      sourceCtx.shadowBlur = bloom;
-      sourceCtx.lineWidth = stroke * 1.55;
-      sourceCtx.strokeStyle = 'rgba(255,255,255,0.62)';
-      sourceCtx.strokeText(best.lines[i], x, y);
-
       sourceCtx.shadowBlur = 0;
-      sourceCtx.lineWidth = stroke * 0.55;
-      sourceCtx.strokeStyle = 'rgba(255,255,255,0.18)';
-      sourceCtx.fillStyle = 'rgba(255,255,255,0.22)';
-      for (let pass = 0; pass < 16; pass++) {
-        const a = seed * 0.00021 + i * 1.37 + pass * 2.399963;
-        const r = (0.25 + (pass % 5) * 0.18) * stroke;
-        const ox = Math.cos(a) * r + Math.sin(a * 0.63) * stroke * 0.24;
-        const oy = Math.sin(a * 1.17) * r * 0.72 + Math.cos(a * 0.41) * stroke * 0.2;
-        sourceCtx.strokeText(best.lines[i], x + ox, y + oy);
-        if (pass % 3 === 0) sourceCtx.fillText(best.lines[i], x + ox * 0.55, y + oy * 0.55);
-      }
-
-      sourceCtx.fillStyle = 'rgba(255,255,255,0.96)';
-      sourceCtx.strokeStyle = 'rgba(255,255,255,0.84)';
-      sourceCtx.lineWidth = stroke * 0.72;
+      sourceCtx.lineWidth = stroke;
+      sourceCtx.strokeStyle = 'rgba(255,255,255,0.28)';
+      sourceCtx.fillStyle = 'rgba(255,255,255,1)';
       sourceCtx.strokeText(best.lines[i], x, y);
       sourceCtx.fillText(best.lines[i], x, y);
     }
     sourceCtx.restore();
   }
 
+  function directionalMaxAlpha (data, x, y, dx, dy, radius) {
+    let a = sampleAlpha(data, x + dx * radius * 0.42, y + dy * radius * 0.42);
+    a = Math.max(a, sampleAlpha(data, x + dx * radius * 0.72, y + dy * radius * 0.72));
+    return Math.max(a, sampleAlpha(data, x + dx * radius, y + dy * radius));
+  }
+
+  function apertureGuard (data, x, y, base, size) {
+    const clear = 1 - smooth(0.025, 0.16, base);
+    if (!clear) return 0;
+    const radius = Math.max(4, Math.min(20, size * 0.085));
+    const left = directionalMaxAlpha(data, x, y, -1, 0, radius);
+    const right = directionalMaxAlpha(data, x, y, 1, 0, radius);
+    const up = directionalMaxAlpha(data, x, y, 0, -1, radius);
+    const down = directionalMaxAlpha(data, x, y, 0, 1, radius);
+    const enclosed = Math.min(Math.min(left, right), Math.min(up, down));
+    const openAperture = Math.min(Math.min(up, down), Math.max(left, right));
+    return clear * smooth(0.18, 0.62, Math.max(enclosed, openAperture));
+  }
+
   function fluidizeSource (size) {
     const src = sourceCtx.getImageData(0, 0, width, height).data;
     const out = maskCtx.createImageData(width, height);
     const dst = out.data;
-    const amp = Math.max(2.2, Math.min(11, size * 0.058));
-    const spread = Math.max(1.4, Math.min(7, size * 0.033));
+    const amp = Math.max(1.6, Math.min(7.2, size * 0.034));
+    const spread = Math.max(1.1, Math.min(4.2, size * 0.019));
     const phase = (seed % 8192) * 0.0131;
 
     for (let y = 0; y < height; y++) {
@@ -771,11 +771,13 @@ const HiddenMessage = (() => {
         dilated = Math.max(dilated, sampleAlpha(src, sx + reach * 0.7, sy - reach * 0.7));
         dilated = Math.max(dilated, sampleAlpha(src, sx - reach * 0.7, sy - reach * 0.7));
 
-        const threshold = 0.055 + ripple * 0.055;
-        const body = smooth(threshold, 0.76, dilated);
-        const solid = smooth(0.40, 0.90, core);
-        const edge = smooth(0.010, 0.27, dilated) * (1 - solid);
-        const alpha = clamp01(Math.max(body * 0.88, solid, edge * 0.50));
+        const base = sampleAlpha(src, x, y);
+        const body = smooth(0.09, 0.72, base);
+        const warpedBody = smooth(0.28, 0.92, core) * 0.24 * (1 - body);
+        const aura = smooth(0.018, 0.36, dilated) * (0.18 + ripple * 0.07) * (1 - body);
+        const aperture = apertureGuard(src, x, y, base, size);
+        const fluid = Math.max(warpedBody, aura) * (1 - aperture * 0.94);
+        const alpha = clamp01(Math.max(body, fluid));
         const idx = (y * width + x) * 4;
         dst[idx] = 255;
         dst[idx + 1] = 255;
