@@ -83,6 +83,48 @@
     background:rgba(255,255,255,.08); color:#fff; font-size:12px; letter-spacing:.25em; text-transform:uppercase; cursor:pointer;
   }
   #about a { color:#8fb5ff; text-decoration:none; }
+  body.builder-mode #hint, body.builder-mode #ui { display:none; }
+  #builder[hidden] { display:none; }
+  #builder {
+    position:fixed; inset:0; z-index:40; overflow:auto; -webkit-overflow-scrolling:touch; touch-action:auto;
+    background:rgba(5,6,15,.86); color:rgba(255,255,255,.86); padding:26px 16px 34px;
+  }
+  #builder, #builder * { user-select:text; -webkit-user-select:text; }
+  #builder-panel {
+    width:min(720px, 100%); margin:0 auto; border-radius:8px; border:1px solid rgba(255,255,255,.12);
+    background:rgba(16,18,32,.78); box-shadow:0 22px 90px rgba(0,0,0,.55); padding:22px;
+  }
+  .builder-top { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:18px; }
+  .builder-top h1 { font-weight:250; font-size:21px; letter-spacing:.32em; text-transform:uppercase; color:#fff; }
+  .builder-top a { color:rgba(255,255,255,.72); text-decoration:none; font-size:12px; letter-spacing:.2em; text-transform:uppercase; }
+  .builder-grid { display:grid; gap:16px; }
+  .builder-field { display:grid; gap:8px; }
+  .builder-field label { font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:rgba(255,255,255,.56); }
+  #builder textarea, #builder input, #builder select {
+    width:100%; border-radius:8px; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.07);
+    color:#fff; font:16px/1.4 -apple-system, 'Segoe UI', Roboto, sans-serif; padding:12px 13px; outline:none;
+  }
+  #builder textarea { min-height:104px; resize:vertical; }
+  #builder input[readonly] { font-size:13px; color:rgba(255,255,255,.78); }
+  .builder-row { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .builder-swatches { display:flex; flex-wrap:wrap; gap:10px; }
+  .builder-pal {
+    width:38px; height:38px; border-radius:50%; border:2px solid transparent; cursor:pointer; padding:0;
+    transition:transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+  }
+  .builder-pal.on { border-color:#fff; transform:scale(1.08); box-shadow:0 0 15px rgba(255,255,255,.32); }
+  .builder-actions { display:flex; flex-wrap:wrap; gap:10px; }
+  .builder-actions button, .builder-actions a {
+    border-radius:8px; border:1px solid rgba(255,255,255,.16); background:rgba(255,255,255,.09); color:#fff;
+    padding:10px 16px; cursor:pointer; text-decoration:none; font-size:12px; letter-spacing:.16em; text-transform:uppercase;
+  }
+  @media (max-width:640px) {
+    #builder { padding:14px 10px 24px; }
+    #builder-panel { padding:16px; }
+    .builder-row { grid-template-columns:1fr; }
+    .builder-top { align-items:flex-start; }
+    .builder-top h1 { font-size:17px; letter-spacing:.22em; }
+  }
 </style>
 </head>
 <body>
@@ -115,6 +157,46 @@
     <button class="close" id="ab-close">return to the canvas</button>
   </div>
 </div>
+<div id="builder" hidden>
+  <div id="builder-panel">
+    <div class="builder-top">
+      <h1>FLUX builder</h1>
+      <a id="builder-play" href="./">play</a>
+    </div>
+    <div class="builder-grid">
+      <div class="builder-field">
+        <label for="builder-message">Message</label>
+        <textarea id="builder-message" maxlength="96" spellcheck="false"></textarea>
+      </div>
+      <div class="builder-row">
+        <div class="builder-field">
+          <label>Palette</label>
+          <div class="builder-swatches" id="builder-palettes">
+            <button class="builder-pal pal" type="button" data-p="aurora" aria-label="aurora palette"></button>
+            <button class="builder-pal pal" type="button" data-p="inferno" aria-label="inferno palette"></button>
+            <button class="builder-pal pal" type="button" data-p="neon" aria-label="neon palette"></button>
+            <button class="builder-pal pal" type="button" data-p="ocean" aria-label="ocean palette"></button>
+          </div>
+        </div>
+        <div class="builder-field">
+          <label for="builder-style">Typography</label>
+          <select id="builder-style">
+            <option value="hand">Hand</option>
+            <option value="sans">Sans</option>
+          </select>
+        </div>
+      </div>
+      <div class="builder-field">
+        <label for="builder-url">URL</label>
+        <input id="builder-url" readonly>
+      </div>
+      <div class="builder-actions">
+        <button id="builder-copy" type="button">Copy</button>
+        <a id="builder-open" target="_blank" rel="noopener">Open</a>
+      </div>
+    </div>
+  </div>
+</div>
 <div id="toast"></div>
 <div id="nogl">your browser doesn't support WebGL —<br>FLUX needs a GPU to dream on.</div>
 <script>
@@ -126,6 +208,9 @@
    ============================================================ */
 
 const canvas = document.getElementById('c');
+const paletteKeys = ['aurora', 'inferno', 'neon', 'ocean'];
+const defaultPaletteMode = 'aurora';
+const builderMode = getBuilderMode();
 const hiddenMessageText = getHiddenMessageText();
 const hiddenMessageTypographyPresets = {
   hand: {
@@ -167,15 +252,71 @@ const config = {
   SPLAT_RADIUS: 0.22,
   SPLAT_FORCE: 6000,
 };
-let paletteMode = 'aurora';
+let paletteMode = getPaletteMode();
 let lastInteraction = 0;
 let ignited = false;
 
+function getSearchParams () {
+  try {
+    return new URLSearchParams(window.location.search);
+  } catch (e) {
+    return new URLSearchParams();
+  }
+}
+
+function normalizeHiddenMessage (value) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 96);
+}
+
 function getHiddenMessageText () {
   try {
-    const params = new URLSearchParams(window.location.search);
-    const raw = params.get('msg') || params.get('message') || '';
-    return raw.replace(/\s+/g, ' ').trim().slice(0, 96);
+    const params = getSearchParams();
+    const encoded = params.get('msg64') || params.get('message64') || params.get('m64') || params.get('base64');
+    if (encoded) {
+      const decoded = decodeHiddenMessage(encoded);
+      if (decoded) return decoded;
+    }
+    return normalizeHiddenMessage(params.get('msg') || params.get('message') || '');
+  } catch (e) {
+    return '';
+  }
+}
+
+function bytesToBinary (bytes) {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000)
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return binary;
+}
+
+function encodeHiddenMessage (value) {
+  const text = normalizeHiddenMessage(value);
+  if (!text) return '';
+  try {
+    const bytes = window.TextEncoder
+      ? new TextEncoder().encode(text)
+      : Uint8Array.from(unescape(encodeURIComponent(text)), ch => ch.charCodeAt(0));
+    return btoa(bytesToBinary(bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  } catch (e) {
+    return '';
+  }
+}
+
+function decodeHiddenMessage (value) {
+  try {
+    const raw = String(value || '').trim();
+    if (!raw || raw.length > 768) return '';
+    const base = raw.replace(/-/g, '+').replace(/_/g, '/');
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(base)) return '';
+    const remainder = base.length % 4;
+    if (remainder === 1) return '';
+    const padded = base + (remainder ? '='.repeat(4 - remainder) : '');
+    const binary = atob(padded);
+    const bytes = Uint8Array.from(binary, ch => ch.charCodeAt(0));
+    const text = window.TextDecoder
+      ? new TextDecoder('utf-8', { fatal:true }).decode(bytes)
+      : decodeURIComponent(escape(binary));
+    return normalizeHiddenMessage(text);
   } catch (e) {
     return '';
   }
@@ -183,12 +324,33 @@ function getHiddenMessageText () {
 
 function getHiddenMessageTypography () {
   try {
-    const params = new URLSearchParams(window.location.search);
+    const params = getSearchParams();
     const raw = (params.get('msgStyle') || params.get('messageStyle') || params.get('typography') || 'hand').toLowerCase();
     const aliases = { hand:'hand', handwriting:'hand', cursive:'hand', script:'hand', sans:'sans', clean:'sans' };
     return hiddenMessageTypographyPresets[aliases[raw] || 'hand'];
   } catch (e) {
     return hiddenMessageTypographyPresets.hand;
+  }
+}
+
+function getPaletteMode () {
+  try {
+    const params = getSearchParams();
+    const raw = (params.get('palette') || params.get('color') || params.get('colors') || params.get('colour') || params.get('colours') || defaultPaletteMode).toLowerCase();
+    return paletteKeys.includes(raw) ? raw : defaultPaletteMode;
+  } catch (e) {
+    return defaultPaletteMode;
+  }
+}
+
+function getBuilderMode () {
+  try {
+    const params = getSearchParams();
+    const hash = window.location.hash.replace(/^#/, '').toLowerCase();
+    const raw = params.get('admin') || params.get('builder');
+    return hash === 'admin' || hash === 'builder' || (raw != null && raw !== '0' && raw !== 'false');
+  } catch (e) {
+    return false;
   }
 }
 
@@ -1369,12 +1531,23 @@ const Intro = (() => {
 })();
 
 /* ---------------- UI ---------------- */
-document.querySelectorAll('.pal').forEach(btn => {
+function syncPaletteButtons () {
+  document.querySelectorAll('#ui .pal, .builder-pal').forEach(btn => {
+    btn.classList.toggle('on', btn.dataset.p === paletteMode);
+  });
+}
+
+function setPaletteMode (next, announce) {
+  paletteMode = paletteKeys.includes(next) ? next : defaultPaletteMode;
+  syncPaletteButtons();
+  if (announce) toast(paletteMode);
+}
+
+setPaletteMode(paletteMode, false);
+
+document.querySelectorAll('#ui .pal').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.pal').forEach(b => b.classList.remove('on'));
-    btn.classList.add('on');
-    paletteMode = btn.dataset.p;
-    toast(paletteMode);
+    setPaletteMode(btn.dataset.p, true);
     // celebrate the switch
     const x = 0.3 + Math.random() * 0.4, y = 0.3 + Math.random() * 0.4;
     for (let i = 0; i < 8; i++) {
@@ -1383,6 +1556,66 @@ document.querySelectorAll('.pal').forEach(btn => {
     }
   });
 });
+
+function buildShareUrl (message, palette, style) {
+  const url = new URL(window.location.href);
+  url.search = '';
+  url.hash = '';
+  const encoded = encodeHiddenMessage(message);
+  if (encoded) url.searchParams.set('msg64', encoded);
+  url.searchParams.set('palette', paletteKeys.includes(palette) ? palette : defaultPaletteMode);
+  url.searchParams.set('msgStyle', style === 'sans' ? 'sans' : 'hand');
+  return url.href;
+}
+
+function setupBuilder () {
+  if (!builderMode) return;
+  document.body.classList.add('builder-mode');
+  const builder = document.getElementById('builder');
+  const messageEl = document.getElementById('builder-message');
+  const styleEl = document.getElementById('builder-style');
+  const urlEl = document.getElementById('builder-url');
+  const copyBtn = document.getElementById('builder-copy');
+  const openLink = document.getElementById('builder-open');
+  const playLink = document.getElementById('builder-play');
+  builder.hidden = false;
+  messageEl.value = hiddenMessageText;
+  styleEl.value = hiddenMessageTypography.key;
+
+  function update () {
+    const href = buildShareUrl(messageEl.value, paletteMode, styleEl.value);
+    urlEl.value = href;
+    openLink.href = href;
+    playLink.href = href;
+  }
+
+  document.querySelectorAll('.builder-pal').forEach(btn => {
+    btn.addEventListener('click', () => {
+      setPaletteMode(btn.dataset.p, false);
+      update();
+    });
+  });
+  messageEl.addEventListener('input', update);
+  styleEl.addEventListener('change', update);
+  copyBtn.addEventListener('click', async () => {
+    const href = urlEl.value;
+    try {
+      if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(href);
+      else {
+        urlEl.focus();
+        urlEl.select();
+        document.execCommand('copy');
+      }
+      toast('copied');
+    } catch (e) {
+      toast('copy failed');
+    }
+  });
+  syncPaletteButtons();
+  update();
+}
+
+setupBuilder();
 document.getElementById('snd').addEventListener('click', function () {
   const muted = Audio.toggle();
   this.classList.toggle('off', muted);
